@@ -1,0 +1,36 @@
+---
+title: "NYC Taxi Data"
+author: "Kevin Putschko"
+date: "1/10/2020"
+output: html_document
+---
+
+Alert! Each file we are downloading is around 2.5gb in size!  I'm going to store each url in this RMD document. I open the resulting HTML in Firefox and use the `DownThemAll` extension to manage the download of each file.
+
+```{r setup,}
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load(tidyverse, htmltools, reactable)
+pacman::p_load_gh("rstudio/gt")
+
+url_table <-
+  tibble(url = "https://s3.amazonaws.com/nyc-tlc/trip+data/yellow_tripdata",
+       year = 2009:2019,
+       month = 1:12 %>% str_pad(2, "left", "0") %>% list()) %>%
+  unnest_longer(month) %>%
+  transmute(filename = str_glue("{year}-{month}.csv") %>% as.character(),
+            url = str_c(url, filename, sep = "_"),
+            html = str_glue("<a href='{url}'>{filename}</a>") %>% as.character())
+
+
+# url_table
+url_table %>% 
+  reactable(columns = list(
+    url = colDef(name = "URL", 
+                 cell = function(value, index){
+                   htmltools::tags$a(href = .[index, 'url'], 
+                                     target = "_blank", 
+                                     as.character(value))
+                 }))
+  )
+```
