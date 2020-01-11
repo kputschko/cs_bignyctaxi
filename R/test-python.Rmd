@@ -1,0 +1,15 @@
+---
+title: "Test Python"
+author: "Kevin Putschko"
+date: "1/10/2020"
+output: html_document
+---
+
+```{python, test}
+import d6tstack
+import glob
+
+c = d6tstack.combine_csv.CombinerCSV(glob.glob('small-data/*.csv'))
+c.to_mssql_combine('mssql+pymssql://sheardata\kevin:putschko@localhost/db', 'tablename')
+```
+
