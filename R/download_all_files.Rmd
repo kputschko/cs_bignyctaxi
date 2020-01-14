@@ -10,7 +10,6 @@ Alert! Each file we are downloading is around 2.5gb in size!  I'm going to store
 ```{r TABLE, echo = FALSE}
 
 pacman::p_load(tidyverse, knitr)
-pacman::p_load_gh("rstudio/gt")
 
 url_table <-
   tibble(url = "https://s3.amazonaws.com/nyc-tlc/trip+data/yellow_tripdata",
