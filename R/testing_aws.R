@@ -33,26 +33,21 @@ pacman::p_load(tidyverse, reticulate)
 
 # AWS Access --------------------------------------------------------------
 
-# AWS Access Key
-# AKIATICKD4E2HUZB4RF2
-
-# AWS Secret Key
-# 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
-
+source("R/aws_access.R")
 
 # SageMaker Package -------------------------------------------------------
 # https://tmastny.github.io/sagemaker/index.html
 
 sagemaker::sagemaker_install(pip = TRUE)
-sagemaker::sagemaker_save_execution_role("arn:aws:iam::223493742900:role/service-role/AmazonSageMaker-ExecutionRole-20200113T150129")
+sagemaker::sagemaker_save_execution_role()
 
 write_s3(mtcars, s3(s3_bucket(), "mtcars.csv"))
 
 # Package - PAWS ----------------------------------------------------------
 # Documentation is lacking in context.  I don't know how to get started
 
-Sys.setenv(AWS_ACCESS_KEY_ID = "AKIATICKD4E2HUZB4RF2",
-           AWS_SECRET_ACCESS_KEY = "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",
+Sys.setenv(AWS_ACCESS_KEY_ID = key_a,
+           AWS_SECRET_ACCESS_KEY = key_s,
            AWS_REGION = "us-east-2")
 
 aws_ec2 <- paws::ec2()
