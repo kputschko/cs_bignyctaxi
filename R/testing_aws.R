@@ -32,6 +32,7 @@ pacman::p_load(tidyverse, reticulate)
 
 
 # AWS Access --------------------------------------------------------------
+# On exp01754 laptop
 
 source("R/aws_access.R")
 
