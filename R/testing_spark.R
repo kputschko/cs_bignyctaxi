@@ -33,15 +33,42 @@ spark_installed_versions()
 # Connect to Spark
 sc <- spark_connect(master = "local", version = "2.3", log = "console")
 
+# Import other spark packages as follows:
+# Other packages include reading xml, spark.sas7bdat for SAS files, etc.
+# sc <-
+#   spark_connect(master = "local",
+#                 version = "2.3",
+#                 config = list(sparklyr.connect.packages = "com.databricks:spark-xml_2.11:0.5.0"))
+
+
 # Import Data
 data <- read_csv("data-small/yellow_tripdata_2009-01.csv")
 sdata <- spark_read_csv(sc, path = "data-small/yellow_tripdata_2009-01.csv")
+
+# Import data without storing it in memory, it will be read in fresh when needed
+# Useful when we know we want to reduce the table size, before storing it in memory
+# spark_read_csv(memory = FALSE) %>% select(a, b, c) %>% compute("reduced_table_size")
+
+# Specify column names and types to reduce processing time in import
+# spark_read_csv(columns = c("name1" = "character", "name2" = "integer"))
 
 # Web Interface
 spark_web(sc)
 
 
+# Import from AWS / Azure:
+# Sys.setenv(AWS_ACCESS_KEY_ID = my_key_id)
+# Sys.setenv(AWS_SECRET_ACCESS_KEY = my_secret_key)
+# sc <- spark_connect(master = "local", version = "2.3", config = list(
+#   sparklyr.connect.packages = "org.apache.hadoop:hadoop-aws:2.7.7"))
+# my_file <- spark_read_csv(sc, "my-file", path = "s3a://my-bucket/my-file.csv")
+
 # Basic Analysis ----------------------------------------------------------
+
+# --- Joining Tables
+# when a table to be joined is small enough, use sdf_broadcast to bring the small
+# table to each distributed node for a join.  can save time this way
+
 
 # --- Some Basics
 data %>% ggplot(aes(x = Tip_Amt)) + geom_density()
@@ -117,9 +144,9 @@ sdata %>% db_compute_raster(Total_Amt, Trip_Distance, resolution = 100)
 
 # When modeling in Spark after a series of transformations to the data,
 # we should cache the data prior to modeling to get a 'checkpoint' on the data
-# along with perhaps saving the data to disk as a parquet file
+# along with setting a data checkpoint with 'sdf_checkpoint'
 sdata_prep <- sdata %>% mutate(abc = 123) %>% compute("transformed_data")
-# spark_write_parquet()
+# spark_set_checkpoint_dir(); sdf_checkpoint()
 
 # --- Modeling
 # text mining, neural networks, clusters, etc.
@@ -130,6 +157,16 @@ smodel_gm <- sdata_prep %>% ml_generalized_linear_regression(Tip_Amt ~ Start_Lat
 smodel_gb %>% summary()
 smodel_lm %>% summary()
 smodel_gm %>% summary()
+
+
+# Using xgboost models
+# https://therinspark.com/extensions.html#xgboost
+
+# Using deep learning models
+# https://therinspark.com/extensions.html#deep-learning
+
+# Using spatial models
+# https://therinspark.com/extensions.html#spatial
 
 # --- for glm type models (linear, logistic, generalized, etc.)
 # ml_evaluate() to get assessment measurements on holdout data set
@@ -221,6 +258,7 @@ s_pipeline <-
 # ml_stage(model_reload, "logistic_regression")
 
 # Stream ------------------------------------------------------------------
+# https://therinspark.com/streaming.html
 # Specify directory that will be continuously populated with new data
 
 dir("data-small/stream_input", full.names = TRUE) %>% file.remove()
