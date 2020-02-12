@@ -7,9 +7,11 @@
 
 # Setup -------------------------------------------------------------------
 
-pacman::p_load(tidyverse, fst, sparklyr, vroom, foreach, rlang, tools)
+rs_env <- "experis_local"
 data_directory <- "C:/Users/exp01754/Downloads/r_bigdata/nyc_taxi"
 data_small_dir <- "C:/Users/exp01754/OneDrive/Data/cs_bignyctaxi/data-small"
+
+pacman::p_load(tidyverse, fst, sparklyr, vroom, foreach, rlang, tools)
 
 
 # Get List of Files -------------------------------------------------------
@@ -40,7 +42,7 @@ file_list <-
 
 # Convert CSV to Parquet --------------------------------------------------
 
-# Working Schema - Valid up to Jan 2009
+# Working Schema - Valid up to March 2009
 spark_types <-
   c(vendor_name = "character",
     Trip_Pickup_DateTime = "timestamp",
@@ -100,6 +102,17 @@ time_convert <- system.time({
     }
 
 })[[3]]
+
+
+# Export Logs -------------------------------------------------------------
+
+log_time <-
+  tibble(action = "csv to parquet",
+         time = time_convert,
+         timestamp = Sys.time(),
+         environment = rs_env)
+
+log_time %>% write_csv("runtime_logs/to_parquet.csv")
 
 
 # Disconnect --------------------------------------------------------------

@@ -5,7 +5,9 @@
 
 
 # Setup -------------------------------------------------------------------
-pacman::p_load(tidyverse, sparklyr, sparklyr.nested, broom)
+
+pacman::p_load(tidyverse, sparklyr)
+
 
 # Connect -----------------------------------------------------------------
 
