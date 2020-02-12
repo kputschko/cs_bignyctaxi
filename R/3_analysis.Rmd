@@ -53,7 +53,7 @@ data_raw <-
 
 # Date functions come from https://www.obstkel.com/spark-sql-date-functions
 
-data_prep <- 
+data_prep_query <- 
   data_raw %>%
   rename_all(str_to_lower) %>%
   mutate_at("payment_type", str_to_lower) %>%
@@ -73,8 +73,12 @@ data_prep <-
          pickup_hour = sql("hour(`trip_pickup_datetime`)"),
          pickup_wday = date_format(trip_pickup_datetime, "E"),
          pickup_nday = dayofweek(trip_pickup_datetime)) %>% 
-  select(-trip_pickup_datetime) %>% 
-  compute("data_prep")
+  select(-trip_pickup_datetime)
+
+data_prep <- data_prep_query %>% compute("data_prep")
+pipeline_prep <- ft_dplyr_transformer(sc, data_prep_query)
+
+# ml_transform(pipeline_prep, data_raw)
 
 reference_wday <- 
   data_prep %>% 
@@ -196,7 +200,7 @@ model_cluster <-
 data_cluster_centers <- 
   model_cluster %>% 
   broom::tidy() %>% 
-  arrange(-size) %>% 
+  arrange(-size) %>%
   mutate(taxi_hub = LETTERS[sequence(n())] %>% as_factor(),
          hub_color = brewer.pal(n(), "Pastel1"),
          hub_pct = size / sum(size))
@@ -237,9 +241,12 @@ I'm using regression models right now for the proof of concept.  They are not go
 -- Plotly Tiles with Day by Hour for Predictions
 
 ```{r predict}
-data_predict_prep <- 
-  ml_predict(model_cluster, data_prediction) %>% 
-  group_by(cluster, pickup_nday, pickup_hour) %>% 
+
+data_predict_clusters <- ml_predict(model_cluster, data_prediction)
+
+data_predict_prep_query <- 
+  data_predict_clusters %>% 
+  group_by(cluster, pickup_nday, pickup_hour, pickup_wday) %>% 
   summarise(rides = count(),
             passengers = sum(passenger_count, na.rm = TRUE),
             distance = sum(trip_distance, na.rm = TRUE),
@@ -251,13 +258,22 @@ data_predict_prep <-
          tpr = tip / rides,
          fpm = fare / distance,
          tpm = tip / distance) %>% 
-  arrange(cluster, pickup_nday, pickup_hour) %>% 
-  compute("prediction_preparation")
+  arrange(cluster, pickup_nday, pickup_hour)
+
+data_predict_prep <- data_predict_prep_query %>% compute("prediction_preparation")
+
+pipeline_predict <- 
+  ml_pipeline(sc) %>% 
+  ft_dplyr_transformer(data_predict_prep_query) %>% 
+  ft_one_hot_encoder("cluster", "en_cluster")
+  
 
 data_predict_encode <-
   data_predict_prep %>% 
-  ft_one_hot_encoder("cluster", "en_cluster") %>% 
-  ft_one_hot_encoder("pickup_nday", "en_nday")
+  ft_one_hot_encoder("cluster", "en_cluster")
+
+# Just Testing
+ml_linear_regression(data_predict_encode, fpm~en_cluster+pickup_wday+pickup_hour)
 
 time_model <- system.time({
   model_list <- list(
@@ -318,7 +334,7 @@ predict_grid_result %>%
 ```
 
 
-## Live Data
+## Streaming Data
 
 -- toggle spark streaming
 -- accept new start lat/lon single point
@@ -330,56 +346,76 @@ Setting up pipelines...
 https://therinspark.com/pipelines.html
 
 ```{r stream}
+# Playing with Pipelines
+# - Fit requires dataframe, returns a pipeline
+# - Transform applies a pipeline to dataframe, returns dataframe 
 
-pipeline_cluster <- 
+# -------- Batch --------
+# Batch: Prepare Raw Data
+
+# Batch: Split Data
+
+# Batch: Clusters on Historical Data
+pipeline_to_build_cluster <- 
   ml_pipeline(sc) %>% 
-  ft_vector_assembler(input_cols = c("start_lat", "start_lon"), 
-                      output_col = "cluster_x") %>% 
-  ml_kmeans(features_col = "cluster_x",
-            prediction_col = "cluster",
-            seed = 42)
+  ft_r_formula(formula = ~ start_lat + start_lon) %>% 
+  ml_kmeans(seed = 42, k = 5, prediction_col = "cluster") %>% 
+  ml_fit(data_historical)
+
+# Batch: Assign Clusters
+batch_cluster_historical <- ml_transform(pipeline_to_build_cluster, data_historical)
+batch_cluster_prediction <- ml_transform(pipeline_to_build_cluster, data_prediction)
 
 
-fx_prepare_predict <- function(x) {
-  x %>% 
-    group_by(cluster, pickup_nday, pickup_hour) %>% 
-    summarise(rides = count(),
-              passengers = sum(passenger_count, na.rm = TRUE),
-              distance = sum(trip_distance, na.rm = TRUE),
-              fare = sum(fare_amt, na.rm = TRUE),
-              tip = sum(tip_amt, na.rm = TRUE)) %>% 
-    mutate(ppr = passengers / rides,
-           dpr = distance / rides,
-           fpr = fare / rides,
-           tpr = tip / rides,
-           fpm = fare / distance,
-           tpm = tip / distance) %>% 
-    arrange(cluster, pickup_nday, pickup_hour)
+# Batch: Build Prediction Models
+# - Singe Case -
+batch_predict_preparation <- ml_fit_and_transform(pipeline_predict, batch_cluster_prediction)  
+
+pipeline_to_build_predictions <- 
+  ml_pipeline(sc) %>% 
+  ft_r_formula(fpm ~ en_cluster + en_nday + pickup_hour) %>% 
+  ml_linear_regression(prediction_col = "p_fpm") %>% 
+  ml_fit(batch_predict_preparation)
+
+# - Many Cases - 
+fx_batch_prediction_pipeline <- function(y = NULL, x, sc = sc) {
+  .rhs <- str_c(x, collapse = " + ")
+  .lhs <- if (is.null(y)) NULL else str_c(y, " ~ ")
+  .frm <- str_c(.lhs, .rhs)
+  .out <- str_c("p_", y)
+  
+  ml_pipeline(sc) %>% ft_r_formula(.frm %>% as.formula()) %>% ml_linear_regression(prediction_col = .out)  
 }
 
-pipeline_predict <- function(predict_y){
-  ml_pipeline(sc) %>% 
-    ft_one_hot_encoder_estimator(
-      input_cols = c("pickup_nday", "cluster"), 
-      output_cols = c("en_nday", "en_cluster")) %>% 
-    ft_vector_assembler(input_cols = c("en_cluster", "en_nday", "pickup_hour"),
-                        output_col = "predict_x") %>% 
-    ml_linear_regression(features_col = "predict_x",
-                         label_col = predict_y,
-                         prediction_col = str_c("p_", predict_y))
-}
+predict_y_cols <- c("rides", "ppr", "dpr", "fpr", "tpr", "fpm", "tpm")
+
+pipeline_to_build_predictions_list <- 
+  map(predict_y_cols, fx_batch_prediction_pipeline, 
+      sc = sc, x = c("en_cluster", "en_nday", "pickup_hour")) %>% 
+  set_names(str_c("pipeline_", predict_y_cols))
+
+pipeline_to_build_predictions_fits <- 
+  pipeline_to_build_predictions_list %>% 
+  modify(ml_fit, batch_predict_preparation)
 
 
-pipe_cl <- 
-  data_streaming %>% 
-  sdf_sample(0.001, replacement = FALSE) %>% 
-  ml_fit_and_transform(pipeline_cluster, .)
+# Batch: Get Predictions
+# - Convert to list to do this for each Y value
+batch_predict_result <- ml_transform(pipeline_to_build_predictions_fits$fpm, predict_grid)
 
-pipe_pr <- 
-  pipe_cl %>% 
-  fx_prepare_predict() %>% 
-  ml_fit_and_transform(pipeline_predict("fare"), .) %>% 
-  select(cluster:pickup_hour, last_col())
+
+# -------- Stream --------
+# - New Data
+stream_new_data <- data_streaming %>% sdf_sample(0.001, replacement = FALSE)
+
+# - Assign Clusters
+stream_cluster_assign <- ml_transform(pipeline_to_build_cluster, stream_new_data)
+
+# - Prepare for Prediction
+stream_predict_preparation <- ml_fit_and_transform(pipeline_predict, stream_cluster_assign)
+
+# - Get Predictions
+stream_predict_result <- ml_transform(pipeline_to_build_predictions_fits$fpm, stream_predict_preparation)
 
 ```
 
