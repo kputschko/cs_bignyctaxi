@@ -71,13 +71,19 @@ time_model_predict <- system.time({
 
 # Step X: Summaries -------------------------------------------------------
 
-s_count <- data_raw %>% count()
+s_summary <-
+  data_raw %>%
+  summarise(n = count(),
+            date_min = min(Trip_Pickup_DateTime),
+            date_max = max(Trip_Pickup_DateTime)) %>%
+  collect() %>%
+  mutate_at(vars(date_min, date_max), date)
 
 s_centers <-
   data_predict_clus %>%
   group_by(cluster) %>%
-  summarise(center_lon = mean(start_lon),
-            center_lat = mean(start_lat),
+  summarise(center_lon = mean(start_lon, na.rm = TRUE),
+            center_lat = mean(start_lat, na.rm = TRUE),
             size = count()) %>%
   arrange(desc(size)) %>%
   collect() %>%
@@ -103,35 +109,15 @@ s_blackmap <-
   db_compute_raster(x = start_lon, y = start_lat, resolution = 500) %>%
   rename(n = `n()`)
 
+
 # Carry Summaries Forward
 export_summary <-
   ls(pattern = "^s_") %>%
-  mget(inherits = TRUE) %>%
+  mget(inherits = TRUE)
 
 
+# Export Summaries
 export_summary %>% write_rds("model_summary/summary.rds")
-
-# --- For Show Only ---
-# s_heatmap %>%
-#   ggplot(aes(x = pickup_hour, y = pickup_wday, fill = rides)) +
-#   geom_tile() +
-#   scale_fill_viridis_c(label = scales::number_format())
-#
-# s_heatmap %>%
-#   ggplot(aes(x = pickup_hour, y = pickup_wday, fill = fpm)) +
-#   geom_tile() +
-#   scale_fill_viridis_c(label = scales::dollar_format())
-#
-# library(leaflet)
-# s_blackmap %>%
-#   leaflet() %>%
-#   addProviderTiles(providers$CartoDB.DarkMatterNoLabels) %>%
-#   addCircles(lng = ~start_lon,
-#              lat = ~start_lat,
-#              opacity = ~n,
-#              radius = ~n,
-#              stroke = FALSE,
-#              color = "yellow")
 
 
 # Step 7: Export Models ---------------------------------------------------
