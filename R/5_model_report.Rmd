@@ -61,7 +61,10 @@ runtime_summary %>% datatable()
 
 Here it is...
 
-```{r heatmap, fig.align='center', out.width="100%", fig.height=2}
+```{r heatmap, fig.align='center'}
+# calibri for headers
+# avenir for body
+
 model_summaries$s_heatmap %>%
   ggplot(aes(x = pickup_hour, y = pickup_wday, fill = rides)) +
   geom_tile() +
@@ -87,7 +90,6 @@ model_summaries$s_heatmap %>%
        y = "Day of the Week",
        caption = str_glue("Data ranges from {display_date_min} to {display_date_max}")) +
   theme_gray()
-
 ```
 
 ### Map

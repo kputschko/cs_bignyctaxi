@@ -1,4 +1,4 @@
 action,time,timestamp,environment
-time_load_pipelines,57.04000000000002,2020-02-13T15:33:18Z,experis_local
-time_model_cluster,7.75,2020-02-13T15:33:18Z,experis_local
-time_model_predict,55.27999999999997,2020-02-13T15:33:18Z,experis_local
+time_load_pipelines,43.58000000000001,2020-02-14T21:55:34Z,experis_local
+time_model,27.110000000000014,2020-02-14T21:55:34Z,experis_local
+time_model_export,760.9100000000001,2020-02-14T21:55:34Z,experis_local

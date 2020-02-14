@@ -5,8 +5,12 @@
 
 # Setup -------------------------------------------------------------------
 
+pacman::p_load(tidyverse, sparklyr, rlang, RColorBrewer, dbplot, mleap, foreach)
+
 rs_env <- "experis_local"
-pacman::p_load(tidyverse, sparklyr, rlang, RColorBrewer, dbplot)
+data_input <- "data-small/parquet/yellow_tripdata_2009-01"
+model_output <- "models"
+
 
 # Connect -----------------------------------------------------------------
 
@@ -27,60 +31,38 @@ time_load_pipelines <- system.time({
 })[[3]]
 
 
-# Step 2: Import Data -----------------------------------------------------
-
-data_raw <-
-  spark_read_parquet(
-    sc,
-    name = "full_data",
-    path = "C:/Users/exp01754/OneDrive/Data/cs_bignyctaxi/data-small/parquet/yellow_tripdata_2009-01")
+# No need to split the data for clustering here,
+# because the clusters are simply a surrogate for lat and lon, i'm not reusing data
+data_raw <- spark_read_parquet(sc, path = data_input)
 
 
-# Step 3: Prepare and Split -----------------------------------------------
-
-data_prep <-
-  ml_transform(pipelines$sql_rawToCluster, data_raw) %>%
-  sdf_random_split(cluster = 0.50, predict = 0.50, seed = 42)
-
-data_cluster <- data_prep$cluster
-data_predict <- data_prep$predict
-
-# Step 4: Model Cluster ---------------------------------------------------
-
-time_model_cluster <- system.time({
-  model_cluster <- ml_fit(pipelines$model_cluster, data_cluster)
+time_model <- system.time({
+  models <- purrr::modify(pipelines, ml_fit, data_raw)
 })[[3]]
 
+data_cluster <-
+  models[[1]] %>%
+  ml_stage(3) %>%
+  ml_summary("predictions")
 
-# Step 5: Prepare for Predictions -----------------------------------------
-
-data_predict_clus <- ml_transform(model_cluster, data_predict)
-data_predict_prep <- ml_transform(pipelines$sql_clusterToML, data_predict_clus)
-
-
-# Step 6: Model Predictions -----------------------------------------------
-
-time_model_predict <- system.time({
-  model_predict <-
-    pipelines %>%
-    enframe("title", "pipeline") %>%
-    filter(str_detect(title, "model_ml_")) %>%
-    mutate(model = map(pipeline, ml_fit, dataset = data_predict_prep))
-})[[3]]
+data_hourly <-
+  models[[1]] %>%
+  ml_stage(4) %>%
+  ml_transform(data_cluster)
 
 
-# Step X: Summaries -------------------------------------------------------
+# Step 6: Summaries -------------------------------------------------------
 
 s_summary <-
   data_raw %>%
   summarise(n = count(),
-            date_min = min(Trip_Pickup_DateTime),
-            date_max = max(Trip_Pickup_DateTime)) %>%
+            date_min = min(trip_pickup_datetime, na.rm = TRUE),
+            date_max = max(trip_pickup_datetime, na.rm = TRUE)) %>%
   collect() %>%
-  mutate_at(vars(date_min, date_max), date)
+  mutate_at(c("date_min", "date_max"), lubridate::date)
 
 s_centers <-
-  data_predict_clus %>%
+  data_cluster %>%
   group_by(cluster) %>%
   summarise(center_lon = mean(start_lon, na.rm = TRUE),
             center_lat = mean(start_lat, na.rm = TRUE),
@@ -92,25 +74,26 @@ s_centers <-
          hub_pct = size / sum(size))
 
 s_heatmap <-
-  data_predict %>%
-    group_by(pickup_wday, pickup_hour) %>%
-    summarise(rides = count(),
-              fpm = sum(fare_amt, na.rm = TRUE) / sum(trip_distance, na.rm = TRUE)) %>%
-    collect() %>%
-    complete(pickup_wday, pickup_hour, fill = list(rides = 0, passengers = 0, fpm = 0)) %>%
-    mutate_at("pickup_wday", factor, levels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")) %>%
-    arrange(pickup_wday, pickup_hour) %>%
-    mutate_at("pickup_hour", str_pad, width = 2, pad = "0", side = "left") %>%
-    mutate_at("pickup_hour", factor)
+  data_hourly %>%
+  group_by(pickup_wday, pickup_hour) %>%
+  summarise(rides = sum(rides, na.rm = TRUE),
+            fpm = sum(fare, na.rm = TRUE) / sum(distance, na.rm = TRUE)) %>%
+  collect() %>%
+  complete(pickup_wday, pickup_hour, fill = list(rides = 0, passengers = 0, fpm = 0)) %>%
+  mutate_at("pickup_wday", factor, levels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")) %>%
+  arrange(pickup_wday, pickup_hour) %>%
+  mutate_at("pickup_hour", str_pad, width = 2, pad = "0", side = "left") %>%
+  mutate_at("pickup_hour", factor)
 
 
 s_blackmap <-
-  data_predict %>%
-  db_compute_raster(x = start_lon, y = start_lat, resolution = 500) %>%
+  data_cluster %>%
+  db_compute_raster(x = Start_Lon, y = Start_Lat, resolution = 500) %>%
+  rename_all(str_to_lower) %>%
   rename(n = `n()`)
 
 
-# Carry Summaries Forward
+# Get All Summaries
 export_summary <-
   ls(pattern = "^s_") %>%
   mget(inherits = TRUE)
@@ -120,24 +103,28 @@ export_summary <-
 export_summary %>% write_rds("model_summary/summary.rds")
 
 
-# Step 7: Export Models ---------------------------------------------------
+# Step 8: Export Spark Models --------------------------------------------
 
 export_models <-
-  mget("model_cluster") %>%
+  models %>%
   enframe("title", "model") %>%
-  bind_rows(model_predict) %>%
-  mutate_at("title", str_replace, pattern = "model_", replacement = "models/")
+  mutate_at("title", str_replace, pattern = "pipeline_", replacement = "model_") %>%
+  mutate(filepath = file.path("models", title))
+
+if (!dir.exists(model_output)) dir.create(model_output)
+
 
 time_model_export <- system.time({
   foreach(i = 1:nrow(export_models), .errorhandling = "pass") %do% {
     .model <- export_models$model[[i]]
-    .path  <- export_models$title[[i]]
+    .path  <- export_models$filepath[[i]]
     ml_save(.model, .path, overwrite = TRUE)
   }
 })[[3]]
 
 
-# Step 8: Export Run Time -------------------------------------------------
+
+# Step 9: Export Run Time -------------------------------------------------
 
 export_time <-
   ls(pattern = "time_") %>%

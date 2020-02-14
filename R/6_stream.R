@@ -4,7 +4,7 @@
 # Setup -------------------------------------------------------------------
 
 rs_env <- "experis_local"
-pacman::p_load(tidyverse, sparklyr, foreach)
+pacman::p_load(tidyverse, sparklyr, mleap)
 
 
 # Connect -----------------------------------------------------------------

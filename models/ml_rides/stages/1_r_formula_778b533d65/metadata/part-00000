@@ -1,1 +1,0 @@
-{"class":"org.apache.spark.ml.feature.RFormulaModel","timestamp":1581537525716,"sparkVersion":"2.3.3","uid":"r_formula_778b533d65","paramMap":{"forceIndexLabel":false,"stringIndexerOrderType":"frequencyDesc","featuresCol":"features","handleInvalid":"error","labelCol":"label","formula":"rides ~ en_cluster + pickup_wday + pickup_hour"}}

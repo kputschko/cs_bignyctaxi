@@ -7,6 +7,8 @@
 # Setup -------------------------------------------------------------------
 
 pacman::p_load(tidyverse, sparklyr)
+data_input <- "data-small/parquet/yellow_tripdata_2009-01"
+pipe_output <- "pipelines"
 
 
 # Connect -----------------------------------------------------------------
@@ -14,21 +16,16 @@ pacman::p_load(tidyverse, sparklyr)
 sc <- spark_connect(master = "local", version = "2.3")
 
 
-# Step 1: Data - Raw Import -----------------------------------------------
+# Import Data for Pipeline  -----------------------------------------------
 
-data_1 <-
-  spark_read_parquet(
-    sc,
-    name = "full_data",
-    path = "C:/Users/exp01754/OneDrive/Data/cs_bignyctaxi/data-small/parquet/yellow_tripdata_2009-01")
+data_1 <- spark_read_parquet(sc, path = data_input)
 
 
-# Step 2: Pipeline - Prepare Data -----------------------------------------
+# Construct SQL Filters ---------------------------------------------------
 
-pipeline_sql_rawToCluster <-
+transform_1 <-
   data_1 %>%
   rename_all(str_to_lower) %>%
-  mutate_at("payment_type", str_to_lower) %>%
   filter(start_lon > -74.05,  start_lon < -73.75,
          start_lat >  40.58,  start_lat <  40.90,
          end_lon > -74.05,    end_lon < -73.75,
@@ -36,7 +33,23 @@ pipeline_sql_rawToCluster <-
          passenger_count > 0, passenger_count < 7,
          trip_distance > 0,   trip_distance < 100,
          total_amt > 0,
-         !is.na(trip_pickup_datetime)) %>%
+         !is.na(trip_pickup_datetime))
+
+
+# Construct Cluster Stage -------------------------------------------------
+
+pipeline_1 <-
+  ml_pipeline(sc) %>%
+  ft_dplyr_transformer(transform_1) %>%
+  ft_r_formula(~ start_lat + start_lon) %>%
+  ml_kmeans(seed = 42, k = 5, prediction_col = "cluster")
+
+
+# Construct SQL Feature Engineering ---------------------------------------
+
+transform_2 <-
+  ml_fit_and_transform(pipeline_1, data_1) %>%
+  mutate_at("payment_type", str_to_lower) %>%
   mutate(trip_time = unix_timestamp(trip_dropoff_datetime) - unix_timestamp(trip_pickup_datetime)) %>%
   mutate(trip_pickup_datetime = to_utc_timestamp(trip_pickup_datetime, "UTC")) %>%
   mutate(pickup_date = date_format(trip_pickup_datetime, "YYYY-MM-DD"),
@@ -46,41 +59,11 @@ pipeline_sql_rawToCluster <-
          pickup_hour = sql("hour(`trip_pickup_datetime`)"),
          pickup_wday = date_format(trip_pickup_datetime, "E"),
          pickup_nday = dayofweek(trip_pickup_datetime)) %>%
-  select(start_lon, start_lat, passenger_count,
-         trip_time, trip_distance, payment_type,
-         fare_amt, tip_amt,
+  select(cluster, start_lon, start_lat,
+         passenger_count, trip_time, trip_distance,
+         payment_type, fare_amt, tip_amt,
          pickup_date:pickup_nday) %>%
-  ft_dplyr_transformer(sc, tbl = .)
-
-
-# Step 3: Data - Apply Preparations ---------------------------------------
-
-data_2 <- ml_transform(pipeline_sql_rawToCluster, data_1)
-
-
-# Step 4: Pipeline - Cluster ----------------------------------------------
-
-pipeline_model_cluster <-
-  ml_pipeline(sc) %>%
-  ft_r_formula(~ start_lat + start_lon) %>%
-  ml_kmeans(seed = 42, k = 5, prediction_col = "cluster")
-
-
-# Step 5: Model - Clusters ------------------------------------------------
-
-model_cluster <- ml_fit(pipeline_model_cluster, data_2)
-
-
-# Step 6: Data - Apply Clusters -------------------------------------------
-
-data_3 <- ml_transform(model_cluster, data_2)
-
-
-# Step 7: Pipeline - Prepare for Prediction Models ------------------------
-
-pipeline_sql_clusterToML <-
-  data_3 %>%
-  group_by(cluster, pickup_mon, pickup_wday, pickup_hour) %>%
+  group_by(cluster, pickup_year, pickup_mon, pickup_wday, pickup_nday, pickup_hour) %>%
   summarise(rides = count(),
             passengers = sum(passenger_count, na.rm = TRUE),
             distance = sum(trip_distance, na.rm = TRUE),
@@ -92,61 +75,64 @@ pipeline_sql_clusterToML <-
          tpr = tip / rides,
          fpm = fare / distance,
          tpm = tip / distance) %>%
-  arrange(cluster) %>%
-  ft_dplyr_transformer(sc, tbl = .)
+  arrange(cluster)
 
 
-# Step 8: Data - Apply SQL Preparations for Prediction --------------------
+# Create Function for Pipeline Creation -----------------------------------
+# The function helps create separate pipelines for a given response
 
-data_4 <- ml_transform(pipeline_sql_clusterToML, data_3)
-
-
-# Step 9: Pipeline - Prediction -------------------------------------------
-
-fx_predict_pipeline <- function(response, features, sc = sc){
+fx_spark_pipeline_cluster_lr <- function(response, features, sc = sc){
 
   .formula <- ml_standardize_formula(response = response, features = features)
   .p_out   <- str_c("p_", response)
 
   ml_pipeline(sc) %>%
+    ft_dplyr_transformer(transform_1) %>%
+    ft_r_formula(~ start_lat + start_lon) %>%
+    ml_kmeans(seed = 42, k = 5, prediction_col = "cluster") %>%
+    ft_dplyr_transformer(transform_2) %>%
     ft_one_hot_encoder("cluster", "en_cluster") %>%
     ft_r_formula(.formula) %>%
     ml_linear_regression(prediction_col = .p_out)
+
 }
 
-model_x <- c("en_cluster","pickup_wday", "pickup_hour")
-model_y <- c("rides", "ppr", "dpr", "fpr", "tpr", "fpm", "tpm")
 
-pipeline_model_ml <-
+# Construct Full Pipeline -------------------------------------------------
+# model_y <- c("rides", "ppr", "dpr", "fpr", "tpr", "fpm", "tpm")
+
+model_y <- c("rides", "fpm")
+model_x <- c("en_cluster","pickup_wday", "pickup_hour")
+
+pipeline_prediction <-
   model_y %>%
-  map(fx_predict_pipeline, sc = sc, features = model_x) %>%
+  map(fx_spark_pipeline_cluster_lr, sc = sc, features = model_x) %>%
   set_names(model_y)
 
 
-# Step 10: Model - Predictions --------------------------------------------
-# I don't actually want to build models here, I'll do this in next script
-# model_prediction <- pipeline_model_ml %>% modify(ml_fit, data_4)
+# Export Pipelines --------------------------------------------------------
 
-
-# Step 11: Pipeline - Export ----------------------------------------------
+if (!dir.exists(pipe_output)) dir.create(pipe_output)
 
 export_1 <-
-  pipeline_model_ml %>%
+  pipeline_prediction %>%
   enframe("filepath", "pipeline") %>%
-  mutate(filepath = str_c("pipelines/model_ml_", filepath))
+  mutate(filepath = str_c("pipelines/pipeline_", filepath))
 
-export_2 <-
-  c("pipeline_model_cluster",
-    "pipeline_sql_clusterToML",
-    "pipeline_sql_rawToCluster") %>%
-  mget(inherits = TRUE) %>%
-  enframe("filepath", "pipeline") %>%
-  mutate(filepath = str_replace(filepath, "pipeline_", "pipelines/"))
+time_export_pipelines <- system.time({
+  walk2(export_1$pipeline, export_1$filepath, ml_save, overwrite = TRUE)
+})[[3]]
 
-export_3 <- bind_rows(export_1, export_2)
 
-walk2(export_3$pipeline, export_3$filepath,
-      ml_save, overwrite = TRUE, type = "pipeline")
+# Export Runtime ----------------------------------------------------------
+
+log_time <-
+  tibble(action = "export_pipelines",
+         time = time_convert,
+         timestamp = Sys.time(),
+         environment = rs_env)
+
+log_time %>% write_csv("runtime_logs/pipeline_export.csv")
 
 
 # Disconnect --------------------------------------------------------------

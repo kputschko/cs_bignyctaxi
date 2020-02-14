@@ -1,0 +1,1 @@
+{"class":"org.apache.spark.ml.feature.VectorSizeHint","timestamp":1581717014624,"sparkVersion":"2.3.3","uid":"r_formula_40284c6832f3","paramMap":{"inputCol":"en_cluster","size":4,"handleInvalid":"optimistic"}}
