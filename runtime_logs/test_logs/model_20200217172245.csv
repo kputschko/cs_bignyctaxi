@@ -1,0 +1,5 @@
+action,time,n_row,timestamp,run_env,run_ram
+Model: Export Models,224.71000000000004,NA,2020-02-17T22:19:49Z,experis_local,1g
+Model: Fit Models,27.19999999999999,30000,2020-02-17T22:19:49Z,experis_local,1g
+Model: Load Pipelines,29.939999999999998,NA,2020-02-17T22:19:49Z,experis_local,1g
+Model: Model Summary,6.02000000000001,NA,2020-02-17T22:19:49Z,experis_local,1g

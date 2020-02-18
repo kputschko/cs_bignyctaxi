@@ -3,26 +3,34 @@
 # In this script, I'll be using the pipelines created earlier, apply them to
 # new data, and build models that will be stored for later use
 
+# User Input --------------------------------------------------------------
+
+script_config <-
+  list(rs_env      = "experis_local",
+       data_input  = "C:/Users/exp01754/OneDrive/Data/cs_bignyctaxi/data-small/parquet",
+       pipe_input  = "C:/Users/exp01754/OneDrive/Data/cs_bignyctaxi/pipelines",
+       model_out   = "models",
+       sc_ram      = "1g")
+
+
 # Setup -------------------------------------------------------------------
 
-pacman::p_load(tidyverse, sparklyr, rlang, RColorBrewer, dbplot, mleap, foreach)
+pacman::p_load(tidyverse, sparklyr, rlang, RColorBrewer, dbplot, foreach)
 
-rs_env <- "experis_local"
-data_input <- "data-small/parquet/yellow_tripdata_2009-01"
-model_output <- "models"
+# Connect to Spark --------------------------------------------------------
 
+sc_config <- spark_config()
+sc_config$spark.driver.memory <- script_config$sc_ram
 
-# Connect -----------------------------------------------------------------
-
-sc <- spark_connect(master = "local", version = "2.3")
+sc <- spark_connect("local", config = sc_config)
 
 
 # Step 1: Import Pipelines ------------------------------------------------
 
-pipenames <- dir("pipelines")
-filepaths <- dir("pipelines", full.names = TRUE)
+filepaths <- dir(script_config$pipe_input, full.names = TRUE)
+pipenames <- filepaths %>% basename()
 
-time_load_pipelines <- system.time({
+time_model.load_pipelines <- system.time({
   pipelines <-
     filepaths %>%
     set_names(pipenames) %>%
@@ -31,76 +39,97 @@ time_load_pipelines <- system.time({
 })[[3]]
 
 
+# Import Data -------------------------------------------------------------
 # No need to split the data for clustering here,
 # because the clusters are simply a surrogate for lat and lon, i'm not reusing data
-data_raw <- spark_read_parquet(sc, path = data_input)
+
+data_raw <-
+  spark_read_parquet(sc,
+                     path = script_config$data_input,
+                     memory = FALSE,
+                     name = "data_raw")
 
 
-time_model <- system.time({
+# Fit Models --------------------------------------------------------------
+
+time_model.fit_models <- system.time({
   models <- purrr::modify(pipelines, ml_fit, data_raw)
+
+  data_cluster <-
+    models[[1]] %>%
+    ml_stage(3) %>%
+    ml_summary("predictions")
+
+  data_hourly <-
+    models[[1]] %>%
+    ml_stage(4) %>%
+    ml_transform(data_cluster)
 })[[3]]
-
-data_cluster <-
-  models[[1]] %>%
-  ml_stage(3) %>%
-  ml_summary("predictions")
-
-data_hourly <-
-  models[[1]] %>%
-  ml_stage(4) %>%
-  ml_transform(data_cluster)
 
 
 # Step 6: Summaries -------------------------------------------------------
 
-s_summary <-
-  data_raw %>%
-  summarise(n = count(),
-            date_min = min(trip_pickup_datetime, na.rm = TRUE),
-            date_max = max(trip_pickup_datetime, na.rm = TRUE)) %>%
-  collect() %>%
-  mutate_at(c("date_min", "date_max"), lubridate::date)
+time_model.model_summaries <- system.time({
 
-s_centers <-
-  data_cluster %>%
-  group_by(cluster) %>%
-  summarise(center_lon = mean(start_lon, na.rm = TRUE),
-            center_lat = mean(start_lat, na.rm = TRUE),
-            size = count()) %>%
-  arrange(desc(size)) %>%
-  collect() %>%
-  mutate(taxi_hub = LETTERS[sequence(n())] %>% as_factor(),
-         hub_color = brewer.pal(n(), "Pastel1"),
-         hub_pct = size / sum(size))
+  s_summary <-
+    data_raw %>%
+    summarise(n = count(),
+              date_min = min(trip_pickup_datetime, na.rm = TRUE),
+              date_max = max(trip_pickup_datetime, na.rm = TRUE)) %>%
+    collect() %>%
+    mutate_at(c("date_min", "date_max"), lubridate::date)
 
-s_heatmap <-
-  data_hourly %>%
-  group_by(pickup_wday, pickup_hour) %>%
-  summarise(rides = sum(rides, na.rm = TRUE),
-            fpm = sum(fare, na.rm = TRUE) / sum(distance, na.rm = TRUE)) %>%
-  collect() %>%
-  complete(pickup_wday, pickup_hour, fill = list(rides = 0, passengers = 0, fpm = 0)) %>%
-  mutate_at("pickup_wday", factor, levels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")) %>%
-  arrange(pickup_wday, pickup_hour) %>%
-  mutate_at("pickup_hour", str_pad, width = 2, pad = "0", side = "left") %>%
-  mutate_at("pickup_hour", factor)
+  s_centers <-
+    data_cluster %>%
+    group_by(cluster) %>%
+    summarise(center_lon = mean(start_lon, na.rm = TRUE),
+              center_lat = mean(start_lat, na.rm = TRUE),
+              size = count()) %>%
+    arrange(desc(size)) %>%
+    collect() %>%
+    mutate(taxi_hub = LETTERS[sequence(n())] %>% as_factor(),
+           hub_color = brewer.pal(n(), "Pastel1"),
+           hub_pct = size / sum(size))
+
+  s_heatmap <-
+    data_hourly %>%
+    group_by(pickup_wday, pickup_hour) %>%
+    summarise(rides = sum(rides, na.rm = TRUE),
+              fpm = sum(fare, na.rm = TRUE) / sum(distance, na.rm = TRUE)) %>%
+    collect() %>%
+    complete(pickup_wday, pickup_hour, fill = list(rides = 0, passengers = 0, fpm = 0)) %>%
+    mutate_at("pickup_wday", factor, levels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")) %>%
+    arrange(pickup_wday, pickup_hour) %>%
+    mutate_at("pickup_hour", str_pad, width = 2, pad = "0", side = "left") %>%
+    mutate_at("pickup_hour", factor)
+
+  # og author round lon/lat to 4 decimals places, counts by group
+  # count is alpha and size, on log scale
+  # alpha range is 0.10, 0.75
+  # size range is 0.134, 0.173; both *4
+  s_blackmap <-
+    data_cluster %>%
+    mutate(lon_r = round(start_lon, 3),
+           lat_r = round(start_lat, 3)) %>%
+    group_by(lat_r, lon_r) %>%
+    count() %>%
+    collect()
 
 
-s_blackmap <-
-  data_cluster %>%
-  db_compute_raster(x = Start_Lon, y = Start_Lat, resolution = 500) %>%
-  rename_all(str_to_lower) %>%
-  rename(n = `n()`)
+  # Get All Summaries
+  export_summary <-
+    ls(pattern = "^s_") %>%
+    mget(inherits = TRUE)
 
 
-# Get All Summaries
-export_summary <-
-  ls(pattern = "^s_") %>%
-  mget(inherits = TRUE)
+  # Export Summaries
+  output_dir <- script_config$model_out %>% file.path(Sys.Date())
+  if (!dir.exists(output_dir)) dir.create(output_dir)
 
+  export_summary %>% write_rds(str_glue("{output_dir}/summary.rds"))
 
-# Export Summaries
-export_summary %>% write_rds("model_summary/summary.rds")
+})[[3]]
+
 
 
 # Step 8: Export Spark Models --------------------------------------------
@@ -109,12 +138,9 @@ export_models <-
   models %>%
   enframe("title", "model") %>%
   mutate_at("title", str_replace, pattern = "pipeline_", replacement = "model_") %>%
-  mutate(filepath = file.path("models", title))
+  mutate(filepath = str_glue("{output_dir}/{title}_{script_config$rs_env}"))
 
-if (!dir.exists(model_output)) dir.create(model_output)
-
-
-time_model_export <- system.time({
+time_model.export_models <- system.time({
   foreach(i = 1:nrow(export_models), .errorhandling = "pass") %do% {
     .model <- export_models$model[[i]]
     .path  <- export_models$filepath[[i]]
@@ -127,16 +153,34 @@ time_model_export <- system.time({
 # Step 9: Export Run Time -------------------------------------------------
 
 export_time <-
-  ls(pattern = "time_") %>%
+  ls(pattern = "time_model.") %>%
   mget(inherits = TRUE) %>%
   enframe("action", "time") %>%
-  mutate(timestamp = Sys.time(),
-         environment = rs_env) %>%
+  mutate(action = action %>% str_replace("time_model.", "Model: ") %>% str_replace("_", " ") %>% str_to_title(),
+         n_row = if_else(action == "Model: Fit Models", s_summary$n[[1]], na_dbl),
+         timestamp = Sys.time(),
+         run_env   = script_config$rs_env,
+         run_ram   = script_config$sc_ram) %>%
   unnest(time)
 
-export_time %>% write_csv("runtime_logs/build_models.csv")
+export_time %>%
+  write_csv(
+    str_glue("runtime_logs/model_{Sys.time() %>% str_remove_all('-|:| ')}.csv"))
 
 
 # Step 9: Disconnect ------------------------------------------------------
 
 spark_disconnect(sc)
+
+
+# Help Me Track Runtime! --------------------------------------------------
+
+fx_runtime <- function(label, expr, ...){
+  tibble(action = label,
+         runtime = system.time(expr)[[3]],
+         timestamp = Sys.time(),
+         run_env = script_config$rs_env,
+         run_ram = script_config$sc_ram)
+}
+
+# fx_runtime("summary", {mtcars %>% summarise(mean(am))})

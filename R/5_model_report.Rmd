@@ -6,33 +6,42 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
+
+# User Input
+script_config <-
+  list(rs_env = "experis_local",
+       input_dir = "C:/Users/exp01754/OneDrive/Data/cs_bignyctaxi",
+       input_model = "models/2020-02-17")
+
+# Set Up
 knitr::opts_chunk$set(echo = FALSE)
 pacman::p_load(tidyverse, lubridate, scales, leaflet, DT)
 
-local_path <- "C:/Users/exp01754/OneDrive/Data/cs_bignyctaxi"
+# Input
+input_directory <- 
+  script_config$input_dir %>%
+  file.path(script_config$input_model)
 
-model_summaries <- 
-  file.path(local_path, "model_summary/summary.rds") %>% 
+# Load Summary
+model_summary <-
+  input_directory %>% 
+  dir(pattern = "summary", full.names = TRUE) %>% 
   read_rds()
 
+# Load Runtime
 runtime_summary <- 
-  file.path(local_path, "runtime_logs") %>% 
+  file.path(script_config$input_dir, "runtime_logs") %>% 
   dir(full.names = TRUE) %>% 
-  map_dfr(read_csv)
+  map_dfr(read_csv) %>% 
+  distinct()
 
-
+# Data Dates
 display_rundate <- 
   runtime_summary %>% 
-  filter(str_detect(action, "predict")) %>% 
-  pull(timestamp) %>% 
-  date() %>% 
-  format("%d %b %Y")
-
-display_runtime_s <- 
-  runtime_summary %>% 
-  filter(str_detect(action, "predict")) %>% 
-  pull(time) %>% 
-  number()
+  filter(str_detect(action, "Fit Models"),
+         timestamp == max(timestamp)) %>% 
+  mutate(d_date = timestamp %>% date() %>% format("%d %b %Y"),
+         d_time = runtime %>% number())
 
 display_rows <- 
   model_summaries$s_summary$n[[1]] %>% 
@@ -45,9 +54,9 @@ display_date_max <- model_summaries$s_summary$date_max[[1]] %>% format("%b %Y")
 
 ### Introduction
 
-The models were refreshed on `r display_runtime_s`.  
+The models were refreshed on `r `.  
 
-It took `r display_runtime_s` seconds.
+It took `r ` seconds.
 
 The data had `r display_rows` rows.
 
@@ -116,10 +125,10 @@ model_summaries$s_centers %>%
              radius = ~if_else(hub_pct > .20, 2500, 5000),
              group = "Hub Clusters") %>%
   addCircleMarkers(data = model_summaries$s_blackmap,
-                   lng = ~start_lon,
-                   lat = ~start_lat,
-                   opacity = ~n,
-                   radius = ~sqrt(n),
+                   lng = ~lon_r,
+                   lat = ~lat_r,
+                   opacity = ~log(n),
+                   radius = ~log(n),
                    stroke = FALSE,
                    color = "yellow",
                    popup = NULL,
@@ -127,6 +136,6 @@ model_summaries$s_centers %>%
   addLayersControl(overlayGroups = c("Taxi Requests", "Hub Clusters"),
                    options = layersControlOptions(collapsed = FALSE)) %>%
   hideGroup("Hub Clusters") %>%
-  setView(lng = map_center$center_lon, lat = map_center$center_lat, zoom = 11)
+  setView(lng = map_center$center_lon, lat = map_center$center_lat, zoom = 10)
 ```
 

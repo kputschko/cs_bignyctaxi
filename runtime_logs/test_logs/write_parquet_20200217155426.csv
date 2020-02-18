@@ -1,0 +1,2 @@
+action,filesize,n_rows,runtime,timestamp,run_env,run_ram
+Write: yellow_tripdata_200902,2415447672,NA,172.93000000000006,2020-02-17T20:54:26Z,experis_local,1g

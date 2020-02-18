@@ -1,0 +1,13 @@
+action,n_row,timestamp,run_env,run_ram,filesize,runtime
+Model: Fit Models,30000,2020-02-17T22:12:57Z,experis_local,1g,NA,27.19999999999999
+Model: Load Pipelines,NA,2020-02-17T22:12:57Z,experis_local,1g,NA,29.939999999999998
+Model: Model Summary,NA,2020-02-17T22:12:57Z,experis_local,1g,NA,6.02000000000001
+Model: Export Models,NA,2020-02-17T22:19:49Z,experis_local,1g,NA,224.71000000000004
+Model: Fit Models,30000,2020-02-17T22:19:49Z,experis_local,1g,NA,27.19999999999999
+Model: Load Pipelines,NA,2020-02-17T22:19:49Z,experis_local,1g,NA,29.939999999999998
+Model: Model Summary,NA,2020-02-17T22:19:49Z,experis_local,1g,NA,6.02000000000001
+Construct Pipelines,NA,2020-02-17T21:12:58Z,experis_local,1g,NA,185.31999999999994
+Write: yellow_tripdata_200901,NA,2020-02-17T20:51:19Z,experis_local,1g,2538104764,240.99
+Write: yellow_tripdata_200902,NA,2020-02-17T20:54:26Z,experis_local,1g,2415447672,172.93000000000006
+Write: yellow_tripdata_200903,NA,2020-02-17T20:57:40Z,experis_local,1g,2599574051,193.27999999999997
+Write: Development Sample,NA,2020-02-17T20:59:27Z,experis_local,1g,NA,95.47000000000003
