@@ -1,0 +1,1 @@
+{"class":"org.apache.spark.ml.feature.VectorAssembler","timestamp":1582041997006,"sparkVersion":"2.4.3","uid":"r_formula_74eb7c1a793d","paramMap":{"outputCol":"features","handleInvalid":"error","inputCols":["start_lat","start_lon"]},"defaultParamMap":{"outputCol":"r_formula_74eb7c1a793d__output","handleInvalid":"error"}}

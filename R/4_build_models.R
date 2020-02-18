@@ -3,32 +3,36 @@
 # In this script, I'll be using the pipelines created earlier, apply them to
 # new data, and build models that will be stored for later use
 
-# User Input --------------------------------------------------------------
+# User Info ---------------------------------------------------------------
 
-script_config <-
-  list(rs_env      = "experis_local",
-       data_input  = "C:/Users/exp01754/OneDrive/Data/cs_bignyctaxi/data-small/parquet",
-       pipe_input  = "C:/Users/exp01754/OneDrive/Data/cs_bignyctaxi/pipelines",
-       model_out   = "models",
-       sc_ram      = "1g")
+r_env <- "local"
+input_pipeline <- NULL
 
 
-# Setup -------------------------------------------------------------------
-
+# R Setup -----------------------------------------------------------------
 pacman::p_load(tidyverse, sparklyr, rlang, RColorBrewer, dbplot, foreach)
+
+source("R/0_config.R")
+script_config <- master_config %>% pluck(r_env)
+
+script_config$input_pipeline <- if (!is_empty(input_pipeline)) input_pipeline
+
 
 # Connect to Spark --------------------------------------------------------
 
 sc_config <- spark_config()
-sc_config$spark.driver.memory <- script_config$sc_ram
-
+sc_config$spark.driver.memory <- script_config$spark_memory
 sc <- spark_connect("local", config = sc_config)
 
 
 # Step 1: Import Pipelines ------------------------------------------------
 
-filepaths <- dir(script_config$pipe_input, full.names = TRUE)
-pipenames <- filepaths %>% basename()
+filepaths <-
+  file.path(script_config$filepath_pipelines,
+            script_config$input_pipeline) %>%
+  dir(full.names = TRUE)
+
+pipenames <- basename(filepaths)
 
 time_model.load_pipelines <- system.time({
   pipelines <-
@@ -45,7 +49,7 @@ time_model.load_pipelines <- system.time({
 
 data_raw <-
   spark_read_parquet(sc,
-                     path = script_config$data_input,
+                     path = script_config$filepath_parquet,
                      memory = FALSE,
                      name = "data_raw")
 
@@ -113,7 +117,8 @@ time_model.model_summaries <- system.time({
            lat_r = round(start_lat, 3)) %>%
     group_by(lat_r, lon_r) %>%
     count() %>%
-    collect()
+    collect() %>%
+	sample_n(10000)
 
 
   # Get All Summaries
@@ -123,10 +128,10 @@ time_model.model_summaries <- system.time({
 
 
   # Export Summaries
-  output_dir <- script_config$model_out %>% file.path(Sys.Date())
-  if (!dir.exists(output_dir)) dir.create(output_dir)
+  output_models <- script_config$filepath_models %>% file.path(Sys.Date())
+  output_models %>% fx_dir_create()
 
-  export_summary %>% write_rds(str_glue("{output_dir}/summary.rds"))
+  export_summary %>% write_rds(str_glue("{output_models}/summary.rds"))
 
 })[[3]]
 
@@ -138,7 +143,7 @@ export_models <-
   models %>%
   enframe("title", "model") %>%
   mutate_at("title", str_replace, pattern = "pipeline_", replacement = "model_") %>%
-  mutate(filepath = str_glue("{output_dir}/{title}_{script_config$rs_env}"))
+  mutate(filepath = str_glue("{output_models}/{title}_{script_config$r_env}"))
 
 time_model.export_models <- system.time({
   foreach(i = 1:nrow(export_models), .errorhandling = "pass") %do% {
@@ -155,32 +160,19 @@ time_model.export_models <- system.time({
 export_time <-
   ls(pattern = "time_model.") %>%
   mget(inherits = TRUE) %>%
-  enframe("action", "time") %>%
+  enframe("action", "runtime") %>%
   mutate(action = action %>% str_replace("time_model.", "Model: ") %>% str_replace("_", " ") %>% str_to_title(),
          n_row = if_else(action == "Model: Fit Models", s_summary$n[[1]], na_dbl),
          timestamp = Sys.time(),
-         run_env   = script_config$rs_env,
-         run_ram   = script_config$sc_ram) %>%
+         run_env   = script_config$r_env,
+         run_ram   = script_config$spark_memory) %>%
   unnest(time)
 
 export_time %>%
   write_csv(
-    str_glue("runtime_logs/model_{Sys.time() %>% str_remove_all('-|:| ')}.csv"))
+    str_glue("{script_config$filepath_logs}/model_{Sys.time() %>% str_remove_all('-|:| ')}.csv"))
 
 
 # Step 9: Disconnect ------------------------------------------------------
 
 spark_disconnect(sc)
-
-
-# Help Me Track Runtime! --------------------------------------------------
-
-fx_runtime <- function(label, expr, ...){
-  tibble(action = label,
-         runtime = system.time(expr)[[3]],
-         timestamp = Sys.time(),
-         run_env = script_config$rs_env,
-         run_ram = script_config$sc_ram)
-}
-
-# fx_runtime("summary", {mtcars %>% summarise(mean(am))})

@@ -8,32 +8,32 @@ output: html_document
 ```{r setup, include=FALSE}
 
 # User Input
-script_config <-
-  list(rs_env = "experis_local",
-       input_dir = "C:/Users/exp01754/OneDrive/Data/cs_bignyctaxi",
-       input_model = "models/2020-02-17")
+r_env <- "local"
+input_model <- "2020-02-18"
 
 # Set Up
 knitr::opts_chunk$set(echo = FALSE)
 pacman::p_load(tidyverse, lubridate, scales, leaflet, DT)
+source("R/0_config.R")
 
-# Input
-input_directory <- 
-  script_config$input_dir %>%
-  file.path(script_config$input_model)
+script_config <- master_config %>% pluck(r_env)
+script_config$input_model <- if (!is_empty(input_model)) input_model
+
 
 # Load Summary
-model_summary <-
-  input_directory %>% 
+model_summary <- 
+  file.path(script_config$filepath_models, script_config$input_model) %>% 
   dir(pattern = "summary", full.names = TRUE) %>% 
   read_rds()
 
-# Load Runtime
+
+# Load Runtimes
 runtime_summary <- 
-  file.path(script_config$input_dir, "runtime_logs") %>% 
-  dir(full.names = TRUE) %>% 
+  script_config$filepath_logs %>% 
+  dir(full.names = TRUE, pattern = ".csv") %>% 
   map_dfr(read_csv) %>% 
   distinct()
+
 
 # Data Dates
 display_rundate <- 
@@ -44,19 +44,19 @@ display_rundate <-
          d_time = runtime %>% number())
 
 display_rows <- 
-  model_summaries$s_summary$n[[1]] %>% 
+  model_summary$s_summary$n[[1]] %>% 
   number(big.mark = ",")
 
-display_date_min <- model_summaries$s_summary$date_min[[1]] %>% format("%b %Y")
-display_date_max <- model_summaries$s_summary$date_max[[1]] %>% format("%b %Y")
+display_date_min <- model_summary$s_summary$date_min[[1]] %>% format("%b %Y")
+display_date_max <- model_summary$s_summary$date_max[[1]] %>% format("%b %Y")
 ```
 
 
 ### Introduction
 
-The models were refreshed on `r `.  
+The models were refreshed on `r display_rundate$d_date[[1]]`.  
 
-It took `r ` seconds.
+It took `r display_rundate$d_time[[1]]` seconds.
 
 The data had `r display_rows` rows.
 
@@ -74,7 +74,7 @@ Here it is...
 # calibri for headers
 # avenir for body
 
-model_summaries$s_heatmap %>%
+model_summary$s_heatmap %>%
   ggplot(aes(x = pickup_hour, y = pickup_wday, fill = rides)) +
   geom_tile() +
   coord_equal() +
@@ -87,7 +87,7 @@ model_summaries$s_heatmap %>%
        caption = str_glue("Data ranges from {display_date_min} to {display_date_max}")) +
   theme_gray()
 
-model_summaries$s_heatmap %>%
+model_summary$s_heatmap %>%
   ggplot(aes(x = pickup_hour, y = pickup_wday, fill = fpm)) +
   geom_tile() +
   coord_equal() +
@@ -107,11 +107,11 @@ This and that...
 
 ```{r clusters}
 map_center <-
-  model_summaries$s_centers %>%
+  model_summary$s_centers %>%
   summarise_at(vars(center_lon, center_lat), mean) %>%
   as.list()
 
-model_summaries$s_centers %>%
+model_summary$s_centers %>%
   leaflet(width = "100%") %>%
   addProviderTiles(providers$CartoDB.DarkMatterNoLabels, group = "New York City") %>%
   addCircles(lng = ~ center_lon,
@@ -124,7 +124,7 @@ model_summaries$s_centers %>%
              fillColor = "transparent",
              radius = ~if_else(hub_pct > .20, 2500, 5000),
              group = "Hub Clusters") %>%
-  addCircleMarkers(data = model_summaries$s_blackmap,
+  addCircleMarkers(data = model_summary$s_blackmap,
                    lng = ~lon_r,
                    lat = ~lat_r,
                    opacity = ~log(n),

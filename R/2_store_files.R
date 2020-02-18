@@ -7,40 +7,35 @@
 
 # User Info ---------------------------------------------------------------
 
-script_config <-
-  list(rs_env        = "experis_local",
-       dir_input     = "C:/Users/exp01754/Downloads/r_bigdata/nyc_taxi/csv",
-       dir_out_full  = "C:/Users/exp01754/Downloads/r_bigdata/nyc_taxi/parquet",
-       dir_out_small = "C:/Users/exp01754/OneDrive/Data/cs_bignyctaxi/data-small",
-       sc_ram        = "1g",
-       output_mode   = "append"
-  )
+r_env <- "local"
 
 
 # R Setup -----------------------------------------------------------------
-
 pacman::p_load(tidyverse, sparklyr, foreach, rlang, tools)
+
+
+source("R/0_config.R")
+script_config <- master_config %>% pluck(r_env)
 
 
 # Connect to Spark --------------------------------------------------------
 
-sc_config <- spark_config()
-sc_config$spark.driver.memory <- script_config$sc_ram
-
-sc <- spark_connect("local", config = sc_config)
+spark_config <- spark_config()
+spark_config$spark.driver.memory <- script_config$spark_memory
+sc <- spark_connect("local", config = spark_config)
 
 
 # Get List of Files -------------------------------------------------------
 
 file_paths <-
-  dir(script_config$dir_input, full.names = TRUE, pattern = ".csv") %>%
+  dir(script_config$filepath_raw, full.names = TRUE, pattern = ".csv") %>%
   enframe("index", "input") %>%
   mutate(title = input %>% file_path_sans_ext() %>% basename() %>% str_remove("-"),
          output = case_when(
-           script_config$output_mode == "append"    ~ script_config$dir_out_full,
-           script_config$output_mode == "overwrite" ~ str_glue('{script_config$dir_out_full}/{title}') %>% as.character(),
+           script_config$output_mode == "append"    ~ script_config$filepath_parquet,
+           script_config$output_mode == "overwrite" ~ str_glue('{script_config$filepath_parquet}/{title}') %>% as.character(),
            TRUE ~ na_chr),
-         output_small = str_replace(output, script_config$dir_out_full, script_config$dir_out_small)) %>%
+         output_small = str_replace(output, script_config$filepath_parquet, script_config$filepath_sample)) %>%
   select(index, title, input, output, output_small)
 
 
@@ -124,8 +119,8 @@ loop_read_write <-
              n_row    = NA,
              runtime   = time_read_write,
              timestamp = Sys.time(),
-             run_env   = script_config$rs_env,
-             run_ram   = script_config$sc_ram)
+             run_env   = script_config$r_env,
+             run_ram   = script_config$spark_memory)
 
     inform("- Writing logs...")
     write_csv(log_loop, str_glue("runtime_logs/write_parquet_{Sys.time() %>% stringr::str_remove_all('-|:| ')}.csv"))
@@ -158,8 +153,8 @@ tibble(action    = "Write: Development Sample",
        runtime   = time_dev_sample,
        timestamp = Sys.time(),
        n_row     = sdf_nrow(dev_output),
-       run_env   = script_config$rs_env,
-       run_ram   = script_config$sc_ram) %>%
+       run_env   = script_config$r_env,
+       run_ram   = script_config$spark_memory) %>%
   write_csv(str_glue("runtime_logs/write_sample_{Sys.time() %>% stringr::str_remove_all('-|:| ')}.csv"))
 
 

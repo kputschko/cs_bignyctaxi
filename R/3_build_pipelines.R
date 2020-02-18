@@ -3,34 +3,29 @@
 # In this script I'm going to be building pipelines for the NYC Taxi Analysis
 # I'll export the pipelines for later use
 
+# User Info ---------------------------------------------------------------
 
-# User Input --------------------------------------------------------------
-
-script_config <-
-  list(rs_env      = "experis_local",
-       data_input  = "C:/Users/exp01754/OneDrive/Data/cs_bignyctaxi/data-small/parquet",
-       pipe_output = "pipelines",
-       sc_ram      = "1g")
-
+r_env <- "local"
 
 # R Setup -----------------------------------------------------------------
-
+source("R/0_config.R")
 pacman::p_load(tidyverse, sparklyr)
+script_config <- master_config %>% pluck(r_env)
+
+
+# Connect to Spark --------------------------------------------------------
+
+sc_config <- spark_config()
+sc_config$spark.driver.memory <- script_config$spark_memory
+sc <- spark_connect("local", config = sc_config)
+
+
+# Begin Pipeline Creation -------------------------------------------------
 
 time_pipelines <- system.time({
 
-  # Connect to Spark --------------------------------------------------------
-
-  sc_config <- spark_config()
-  sc_config$spark.driver.memory <- script_config$sc_ram
-
-  sc <- spark_connect("local", config = sc_config)
-
-
   # Import Data for Pipeline  -----------------------------------------------
-
-  data_1 <- spark_read_parquet(sc, path = script_config$data_input)
-
+  data_1 <- spark_read_parquet(sc, path = script_config$filepath_sample)
 
   # Construct SQL Filters ---------------------------------------------------
 
@@ -120,35 +115,37 @@ time_pipelines <- system.time({
     map(fx_spark_pipeline_cluster_lr, sc = sc, features = model_x) %>%
     set_names(model_y)
 
-
-  # Export Pipelines --------------------------------------------------------
-
-  if (!dir.exists(script_config$pipe_output)) dir.create(script_config$pipe_output)
-
-  export_1 <-
-    pipeline_prediction %>%
-    enframe("filepath", "pipeline") %>%
-    mutate(filepath = file.path(script_config$pipe_output, str_c("pipeline_", filepath)))
-
-  time_export_pipelines <- system.time({
-    walk2(export_1$pipeline, export_1$filepath, ml_save, overwrite = TRUE)
-  })[[3]]
-
 })[[3]]
+
+# Export Pipelines --------------------------------------------------------
+
+output_pipelines <- file.path(script_config$filepath_pipelines, Sys.Date())
+output_pipelines %>% fx_dir_create()
+
+export_1 <-
+  pipeline_prediction %>%
+  enframe("filepath", "pipeline") %>%
+  mutate(filepath = str_glue("{output_pipelines}/pipeline_{filepath}"))
+
+
+time_export_pipelines <- system.time({
+  walk2(export_1$pipeline, export_1$filepath, ml_save, overwrite = TRUE)
+})[[3]]
+
 
 
 # Export Runtime ----------------------------------------------------------
 
 log_time <-
   tibble(action    = "Pipeline: Build",
-         filesize  = NA,
-         n_rows    = NA,
+         n_row     = sdf_nrow(data_1),
          runtime   = time_pipelines,
          timestamp = Sys.time(),
-         run_env   = script_config$rs_env,
-         run_ram   = script_config$sc_ram)
+         run_env   = script_config$r_env,
+         run_ram   = script_config$spark_memory)
 
-write_csv(log_time, str_glue("runtime_logs/pipeline_{Sys.time() %>% str_remove_all('-|:| ')}.csv"))
+
+write_csv(log_time, str_glue("{script_config$filepath_logs}/pipeline_{Sys.time() %>% str_remove_all('-|:| ')}.csv"))
 
 
 # Disconnect --------------------------------------------------------------

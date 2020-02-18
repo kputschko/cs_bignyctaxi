@@ -1,0 +1,2 @@
+action,filesize,n_row,runtime,timestamp,run_env,run_ram
+Write: yellow_tripdata_200902,2415447672,NA,56.483999999999924,2020-02-18T14:55:34Z,sas_server,2g

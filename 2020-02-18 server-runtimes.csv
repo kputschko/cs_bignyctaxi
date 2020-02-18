@@ -1,0 +1,10 @@
+action,n_row,timestamp,run_env,run_ram,filesize,runtime
+Write: yellow_tripdata_200901,NA,2020-02-18T14:54:37Z,sas_server,2g,2.36 GiB,   57.17 sec
+Write: yellow_tripdata_200902,NA,2020-02-18T14:55:34Z,sas_server,2g,2.25 GiB,   56.48 sec
+Write: yellow_tripdata_200903,NA,2020-02-18T14:56:33Z,sas_server,2g,2.42 GiB,   58.46 sec
+Write: Development Sample,"30,000",2020-02-18T15:08:59Z,sas_server,2g,NA,    1.29 sec
+Pipeline: Build,"30,000",2020-02-18T15:25:50Z,sas_server,2g,NA,    8.30 sec
+Model: Export Models,NA,2020-02-18T16:06:46Z,sas_server,2g,NA,    3.38 sec
+Model: Fit Models,"41,859,906",2020-02-18T16:06:46Z,sas_server,2g,NA,"1,661.48 sec"
+Model: Load Pipelines,NA,2020-02-18T16:06:46Z,sas_server,2g,NA,    3.01 sec
+Model: Model Summaries,NA,2020-02-18T16:06:46Z,sas_server,2g,NA,   74.49 sec
