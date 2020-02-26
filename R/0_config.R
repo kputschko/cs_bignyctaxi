@@ -11,20 +11,21 @@
 master_config <- list(
   local = list(
     r_env               = "local",
-    spark_memory        = "2g",
+    spark_memory        = "5G",
     filepath_raw        = "C:/Users/exp01754/Downloads/r_bigdata/nyc_taxi/csv",
     filepath_parquet    = "C:/Users/exp01754/Downloads/r_bigdata/nyc_taxi/parquet",
     parquet_output_mode = "append",
-    filepath_sample     = "C:/Users/exp01754/OneDrive/Data/cs_bignyctaxi/data-small",
+    filepath_sample     = "C:/Users/exp01754/OneDrive/Data/cs_bignyctaxi/data-small/parquet",
     filepath_pipelines  = "C:/Users/exp01754/OneDrive/Data/cs_bignyctaxi/pipelines",
     filepath_models     = "C:/Users/exp01754/OneDrive/Data/cs_bignyctaxi/models",
     filepath_logs       = "C:/Users/exp01754/OneDrive/Data/cs_bignyctaxi/runtime_logs",
-    input_pipeline      = "2020-02-18",
-    input_model         = "2020-02-18"
+    input_pipeline      = "2020-02-26",
+    input_model         = "2020-02-26",
+    model_sample_fraction = 0.50
   ),
   sas_server = list(
     r_env               = "sas_server",
-    spark_memory        = "2g",
+    spark_memory        = "5G",
     filepath_raw        = "/opt/project_area/shared/NYCTaxi_data",
     filepath_parquet    = "/opt/project_area/shared/NYCTaxi_data/parquet",
     parquet_output_mode = "append",
@@ -33,7 +34,8 @@ master_config <- list(
     filepath_models     = "/home/kputschko/projects/cs_bignyctaxi/models",
     filepath_logs       = "/home/kputschko/projects/cs_bignyctaxi/runtime_logs",
     input_pipeline      = "2020-02-18",
-    input_model         = "2020-02-18"
+    input_model         = "2020-02-18",
+    model_sample_fraction = 1
   )
 )
 

@@ -54,6 +54,8 @@ display_date_max <- model_summary$s_summary$date_max[[1]] %>% format("%b %Y")
 
 ### Introduction
 
+note: 5g ram, local, model on full data failed after 785s
+
 The models were refreshed on `r display_rundate$d_date[[1]]`.  
 
 It took `r display_rundate$d_time[[1]]` seconds.

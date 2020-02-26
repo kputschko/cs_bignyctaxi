@@ -10,18 +10,19 @@ input_pipeline <- NULL
 
 
 # R Setup -----------------------------------------------------------------
-pacman::p_load(tidyverse, sparklyr, rlang, RColorBrewer, dbplot, foreach)
+pacman::p_load(tidyverse, sparklyr, rlang, RColorBrewer, foreach)
 
 source("R/0_config.R")
 script_config <- master_config %>% pluck(r_env)
 
-script_config$input_pipeline <- if (!is_empty(input_pipeline)) input_pipeline
+if (!is_empty(input_pipeline)) {script_config$input_pipeline <- input_pipeline}
 
 
 # Connect to Spark --------------------------------------------------------
 
 sc_config <- spark_config()
-sc_config$spark.driver.memory <- script_config$spark_memory
+sc_config$`sparklyr.shell.driver-memory`   <- script_config$spark_memory
+sc_config$`sparklyr.shell.executor-memory` <- script_config$spark_memory
 sc <- spark_connect("local", config = sc_config)
 
 
@@ -34,13 +35,13 @@ filepaths <-
 
 pipenames <- basename(filepaths)
 
-time_model.load_pipelines <- system.time({
+time_model.load_pipelines <- fx_runtime("Model: Load Pipelines", {
   pipelines <-
     filepaths %>%
     set_names(pipenames) %>%
     as.list() %>%
     purrr::modify(ml_load, sc = sc)
-})[[3]]
+})
 
 
 # Import Data -------------------------------------------------------------
@@ -53,10 +54,15 @@ data_raw <-
                      memory = FALSE,
                      name = "data_raw")
 
+if (script_config$model_sample_fraction != 1) {
+  data_raw <- sdf_sample(data_raw, seed = 0.42,
+                         fraction = script_config$model_sample_fraction)
+}
+
 
 # Fit Models --------------------------------------------------------------
 
-time_model.fit_models <- system.time({
+time_model.fit_models <- fx_runtime("Model: Fit Model", {
   models <- purrr::modify(pipelines, ml_fit, data_raw)
 
   data_cluster <-
@@ -68,12 +74,12 @@ time_model.fit_models <- system.time({
     models[[1]] %>%
     ml_stage(4) %>%
     ml_transform(data_cluster)
-})[[3]]
+})
 
 
 # Step 6: Summaries -------------------------------------------------------
 
-time_model.model_summaries <- system.time({
+time_model.model_summaries <- fx_runtime("Model: Summary", {
 
   s_summary <-
     data_raw %>%
@@ -133,7 +139,7 @@ time_model.model_summaries <- system.time({
 
   export_summary %>% write_rds(str_glue("{output_models}/summary.rds"))
 
-})[[3]]
+})
 
 
 
@@ -145,13 +151,13 @@ export_models <-
   mutate_at("title", str_replace, pattern = "pipeline_", replacement = "model_") %>%
   mutate(filepath = str_glue("{output_models}/{title}_{script_config$r_env}"))
 
-time_model.export_models <- system.time({
+time_model.export_models <- fx_runtime("Model: Export Models", {
   foreach(i = 1:nrow(export_models), .errorhandling = "pass") %do% {
     .model <- export_models$model[[i]]
     .path  <- export_models$filepath[[i]]
     ml_save(.model, .path, overwrite = TRUE)
   }
-})[[3]]
+})
 
 
 
@@ -160,13 +166,18 @@ time_model.export_models <- system.time({
 export_time <-
   ls(pattern = "time_model.") %>%
   mget(inherits = TRUE) %>%
-  enframe("action", "runtime") %>%
-  mutate(action = action %>% str_replace("time_model.", "Model: ") %>% str_replace("_", " ") %>% str_to_title(),
-         n_row = if_else(action == "Model: Fit Models", s_summary$n[[1]], na_dbl),
-         timestamp = Sys.time(),
-         run_env   = script_config$r_env,
-         run_ram   = script_config$spark_memory) %>%
-  unnest(time)
+  bind_rows() %>%
+  mutate(n_row = if_else(action == "Model: Fit Model", s_summary$n[[1]], na_dbl))
+
+  # ls(pattern = "time_model.") %>%
+  # mget(inherits = TRUE) %>%
+  # enframe("action", "runtime") %>%
+  # mutate(action = action %>% str_replace("time_model.", "Model: ") %>% str_replace("_", " ") %>% str_to_title(),
+  #        n_row = if_else(action == "Model: Fit Models", s_summary$n[[1]], na_dbl),
+  #        timestamp = Sys.time(),
+  #        run_env   = script_config$r_env,
+  #        run_ram   = script_config$spark_memory) %>%
+  # unnest(time)
 
 export_time %>%
   write_csv(

@@ -1,6 +1,6 @@
 
 # Spark - Pipelines -------------------------------------------------------
-# In this script I'm going to be building pipelines for the NYC Taxi Analysis
+# In this script I will build pipelines for the NYC Taxi Analysis
 # I'll export the pipelines for later use
 
 # User Info ---------------------------------------------------------------
@@ -8,21 +8,22 @@
 r_env <- "local"
 
 # R Setup -----------------------------------------------------------------
-source("R/0_config.R")
 pacman::p_load(tidyverse, sparklyr)
+source("R/0_config.R")
 script_config <- master_config %>% pluck(r_env)
 
 
 # Connect to Spark --------------------------------------------------------
 
 sc_config <- spark_config()
-sc_config$spark.driver.memory <- script_config$spark_memory
+sc_config$`sparklyr.shell.driver-memory`   <- script_config$spark_memory
+sc_config$`sparklyr.shell.executor-memory` <- script_config$spark_memory
 sc <- spark_connect("local", config = sc_config)
 
 
 # Begin Pipeline Creation -------------------------------------------------
 
-time_pipelines <- system.time({
+time_pipelines <- fx_runtime("Pipeline: Build", {
 
   # Import Data for Pipeline  -----------------------------------------------
   data_1 <- spark_read_parquet(sc, path = script_config$filepath_sample)
@@ -115,7 +116,7 @@ time_pipelines <- system.time({
     map(fx_spark_pipeline_cluster_lr, sc = sc, features = model_x) %>%
     set_names(model_y)
 
-})[[3]]
+})
 
 # Export Pipelines --------------------------------------------------------
 
@@ -128,21 +129,25 @@ export_1 <-
   mutate(filepath = str_glue("{output_pipelines}/pipeline_{filepath}"))
 
 
-time_export_pipelines <- system.time({
+time_export_pipelines <- fx_runtime("Pipeline: Export", {
   walk2(export_1$pipeline, export_1$filepath, ml_save, overwrite = TRUE)
-})[[3]]
+})
 
 
 
 # Export Runtime ----------------------------------------------------------
 
 log_time <-
-  tibble(action    = "Pipeline: Build",
-         n_row     = sdf_nrow(data_1),
-         runtime   = time_pipelines,
-         timestamp = Sys.time(),
-         run_env   = script_config$r_env,
-         run_ram   = script_config$spark_memory)
+  time_pipelines %>%
+  add_column(n_row = sdf_nrow(data_1)) %>%
+  bind_rows(time_export_pipelines)
+
+  # tibble(action    = "Pipeline: Build",
+  #        n_row     = sdf_nrow(data_1),
+  #        runtime   = time_pipelines,
+  #        timestamp = Sys.time(),
+  #        run_env   = script_config$r_env,
+  #        run_ram   = script_config$spark_memory)
 
 
 write_csv(log_time, str_glue("{script_config$filepath_logs}/pipeline_{Sys.time() %>% str_remove_all('-|:| ')}.csv"))

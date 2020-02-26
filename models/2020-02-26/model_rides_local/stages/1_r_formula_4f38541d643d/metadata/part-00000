@@ -1,0 +1,1 @@
+{"class":"org.apache.spark.ml.feature.RFormulaModel","timestamp":1582747477405,"sparkVersion":"2.3.3","uid":"r_formula_4f38541d643d","paramMap":{"stringIndexerOrderType":"frequencyDesc","featuresCol":"features","forceIndexLabel":false,"labelCol":"label","formula":"~start_lat + start_lon","handleInvalid":"error"}}

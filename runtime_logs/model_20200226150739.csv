@@ -1,0 +1,5 @@
+action,runtime,timestamp,run_env,run_ram,n_row
+Model: Export Models,407.25,2020-02-26T20:06:13Z,local,5G,NA
+Model: Fit Model,1815.2300000000002,2020-02-26T19:51:15Z,local,5G,20928710
+Model: Load Pipelines,31.910000000000082,2020-02-26T19:11:29Z,local,5G,NA
+Model: Summary,173.09000000000015,2020-02-26T19:57:17Z,local,5G,NA

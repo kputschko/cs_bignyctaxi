@@ -1,0 +1,1 @@
+{"class":"org.apache.spark.ml.feature.RFormulaModel","timestamp":1582747188890,"sparkVersion":"2.3.3","uid":"r_formula_4f386bf018d7","paramMap":{"featuresCol":"features","stringIndexerOrderType":"frequencyDesc","labelCol":"label","formula":"fpm ~ en_cluster + pickup_wday + pickup_hour","handleInvalid":"error","forceIndexLabel":false}}
