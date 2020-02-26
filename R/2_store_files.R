@@ -11,7 +11,7 @@ r_env <- "local"
 
 
 # R Setup -----------------------------------------------------------------
-pacman::p_load(tidyverse, sparklyr, foreach, rlang, tools)
+pacman::p_load(tidyverse, sparklyr, foreach, rlang, tools, tidylog, here)
 
 
 source("R/0_config.R")

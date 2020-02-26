@@ -47,9 +47,19 @@ write_s3(mtcars, s3(s3_bucket(), "mtcars.csv"))
 # Package - PAWS ----------------------------------------------------------
 # Documentation is lacking in context.  I don't know how to get started
 
-Sys.setenv(AWS_ACCESS_KEY_ID = key_a,
-           AWS_SECRET_ACCESS_KEY = key_s,
+pacman::p_load(tidyverse, paws)
+
+aws_keys <-
+  read_lines("C:/Users/exp01754/Downloads/rootkey.csv") %>%
+  tibble(raw = .) %>%
+  separate(col = raw, into = c("key", "id")) %>%
+  deframe() %>%
+  print()
+
+Sys.setenv(AWS_ACCESS_KEY_ID = aws_keys[[1]],
+           AWS_SECRET_ACCESS_KEY = aws_keys[[2]],
            AWS_REGION = "us-east-2")
 
-aws_ec2 <- paws::ec2()
-# aws_ec2$
+aws_emr <- paws::emr()
+?aws_emr
+
