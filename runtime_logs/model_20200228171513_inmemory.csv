@@ -1,0 +1,6 @@
+action,runtime,timestamp,run_env,run_ram,n_row
+Model: Export Models,154.20900000000006,2020-02-28T17:15:13Z,databricks,i3.xlarge; 1-30gb Driver; 4-30gb Workers,NA
+Model: Fit Model,705.086,2020-02-28T17:08:51Z,databricks,i3.xlarge; 1-30gb Driver; 4-30gb Workers,41859906
+Model: Load Pipelines,41.76600000000002,2020-02-28T16:56:00Z,databricks,i3.xlarge; 1-30gb Driver; 4-30gb Workers,NA
+Model: Summary,55.499000000000024,2020-02-28T17:12:25Z,databricks,i3.xlarge; 1-30gb Driver; 4-30gb Workers,NA
+Model: Load Data,32.132000000000005,2020-02-28T16:56:54Z,databricks,i3.xlarge; 1-30gb Driver; 4-30gb Workers,NA

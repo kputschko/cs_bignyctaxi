@@ -1,0 +1,5 @@
+action,runtime,timestamp,run_env,run_ram,n_row
+Model: Export Models,149.72199999999998,2020-02-28T15:51:15Z,databricks,64G,NA
+Model: Fit Model,660.413,2020-02-28T15:43:46Z,databricks,64G,41859906
+Model: Load Pipelines,29.139999999999986,2020-02-28T15:32:13Z,databricks,64G,NA
+Model: Summary,28.424999999999955,2020-02-28T15:46:43Z,databricks,64G,NA

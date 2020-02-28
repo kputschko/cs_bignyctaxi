@@ -29,12 +29,26 @@ master_config <- list(
     filepath_raw        = "/opt/project_area/shared/NYCTaxi_data",
     filepath_parquet    = "/opt/project_area/shared/NYCTaxi_data/parquet",
     parquet_output_mode = "append",
-    filepath_sample     = "/home/kputschko/projects/cs_bignyctaxi/data-small",
+    filepath_sample     = "/home/kputschko/projects/cs_bignyctaxi/data-small/parquet",
     filepath_pipelines  = "/home/kputschko/projects/cs_bignyctaxi/pipelines",
     filepath_models     = "/home/kputschko/projects/cs_bignyctaxi/models",
     filepath_logs       = "/home/kputschko/projects/cs_bignyctaxi/runtime_logs",
     input_pipeline      = "2020-02-18",
     input_model         = "2020-02-18",
+    model_sample_fraction = 1
+  ),
+  databricks = list(
+    r_env               = "databricks",
+    spark_memory        = "64G",
+    filepath_raw        = "/opt/project_area/shared/NYCTaxi_data",
+    filepath_parquet    = "/dbfs/FileStore/tables/parquet2",
+    parquet_output_mode = "append",
+    filepath_sample     = "/home/kputschko/projects/cs_bignyctaxi/data-small/parquet",
+    filepath_pipelines  = "/home/kevin.putschko@experis.com/pipelines",
+    filepath_models     = "/home/kevin.putschko@experis.com/models",
+    filepath_logs       = "/home/kevin.putschko@experis.com/runtime_logs",
+    input_pipeline      = "2020-02-26",
+    input_model         = "2020-02-26",
     model_sample_fraction = 1
   )
 )

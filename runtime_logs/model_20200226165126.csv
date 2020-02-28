@@ -1,0 +1,5 @@
+action,runtime,timestamp,run_env,run_ram,n_row
+Model: Export Models,3.5550000000000637,2020-02-26T21:51:26Z,sas_server,5G,NA
+Model: Fit Model,1036.533,2020-02-26T21:44:13Z,sas_server,5G,41859906
+Model: Load Pipelines,8.389,2020-02-26T21:26:11Z,sas_server,5G,NA
+Model: Summary,73.41200000000003,2020-02-26T21:51:22Z,sas_server,5G,NA

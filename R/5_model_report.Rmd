@@ -2,22 +2,25 @@
 title: "NYC Taxi - Model Report"
 author: "Kevin Putschko"
 date: "`r Sys.Date()`"
-output: html_document
+output: 
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
 ---
 
 ```{r setup, include=FALSE}
 
 # User Input
 r_env <- "local"
-input_model <- "2020-02-18"
+input_model <- "2020-02-26"
 
 # Set Up
 knitr::opts_chunk$set(echo = FALSE)
 pacman::p_load(tidyverse, lubridate, scales, leaflet, DT)
-source("R/0_config.R")
+source("0_config.R")
 
 script_config <- master_config %>% pluck(r_env)
-script_config$input_model <- if (!is_empty(input_model)) input_model
+if (!is_empty(input_model)) {script_config$input_model <- input_model}
 
 
 # Load Summary
@@ -31,15 +34,16 @@ model_summary <-
 runtime_summary <- 
   script_config$filepath_logs %>% 
   dir(full.names = TRUE, pattern = ".csv") %>% 
-  map_dfr(read_csv) %>% 
+  map_dfr(read_csv, col_type = cols()) %>% 
   distinct()
 
 
 # Data Dates
 display_rundate <- 
   runtime_summary %>% 
-  filter(str_detect(action, "Fit Models"),
-         timestamp == max(timestamp)) %>% 
+  arrange(desc(timestamp)) %>% 
+  filter(str_detect(action, "Model:")) %>% 
+  slice(1) %>% 
   mutate(d_date = timestamp %>% date() %>% format("%d %b %Y"),
          d_time = runtime %>% number())
 
@@ -55,6 +59,10 @@ display_date_max <- model_summary$s_summary$date_max[[1]] %>% format("%b %Y")
 ### Introduction
 
 note: 5g ram, local, model on full data failed after 785s
+note: 5g ram, local, model success on 50% of data
+note: server is t2.2xlarge, 8 cpu, 1 core each, 32gb ram, 2.3ghz, 250gb storage
+note: use runtimes from 2020-02-26
+note: databricks cluster, 1 master, 2 executors, 32gb each
 
 The models were refreshed on `r display_rundate$d_date[[1]]`.  
 

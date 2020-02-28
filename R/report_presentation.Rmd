@@ -1,16 +1,16 @@
 ---
-title: "NYC Taxi in Spark"
+title: "Big Data in R with Spark"
 author: "Kevin Putschko"
-date: "2/6/2020"
-output: html_document
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, error = FALSE)
-
-pacman::p_load(tidyverse, sparklyr, sparklyr.nested,
-               dbplot, leaflet, DT, broom, RColorBrewer,
-               plotly)
+pacman::p_load(tidyverse, leaflet, DT, RColorBrewer)
 ```
 
 ## Introduction
@@ -24,10 +24,6 @@ The data comes from the NYC Government website [...] which offers data on taxi r
 I had limited experience with Spark prior to conducting this analysis.  Most of my knowledge comes from the book [...] found here [...].  It's a wonderful resource for getting started with `R` and `sparklyr`.  As of writing this, I'm using `sparklyr 1.1.0` with `Spark 2.3.3`.
 
 The cluster I'm using is on [...] and I'm storing the data in [...], and the size of the full data set is [...].
-
-```{r connect, echo = TRUE}
-sc <- spark_connect(master = "local", version = "2.3")
-```
 
 ## Loading Data
 
