@@ -1,0 +1,431 @@
+---
+title: "Big Data in R with Spark"
+author: "Kevin Putschko"
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, error = FALSE)
+pacman::p_load(tidyverse, leaflet, DT, RColorBrewer)
+```
+
+## Introduction
+
+This data set has been making the rounds in the blog-sphere as a demonstration of how to analyze a large dataset using various technologies.  The original article can be found here [...] and the blog that inspired me to explore this version in R and Spark can be found here [...].
+
+The data comes from the NYC Government website [...] which offers data on taxi rides between 2009 and 2019.  Not all of this data is usable, due to changes in how the data was collected.  So we're going to limit our analysis here to the years [...]. 
+
+## Connecting to Spark
+
+I had limited experience with Spark prior to conducting this analysis.  Most of my knowledge comes from the book [...] found here [...].  It's a wonderful resource for getting started with `R` and `sparklyr`.  As of writing this, I'm using `sparklyr 1.1.0` with `Spark 2.3.3`.
+
+The cluster I'm using is on [...] and I'm storing the data in [...], and the size of the full data set is [...].
+
+## Loading Data
+
+In the GitHub repo for this project, found here [...] you can find the `2_download_files.rmd` file that I used to get all the data from the NYC website using the Firefox extension DownThemAll.  Once we have the raw csv files downloaded, we did some minor data cleaning, and converted them to parquet files for compression and speedier imports in the future.  You can find the file [...] to see this process.
+
+In real life, a situation like this might have a couple processes running: collecting past data and analyzing it to help inform decsions about the future, along with collecting and analyzing incoming data in real time.  Thus, the larger historical data would be analyzed in batches, while the incoming data would be analyzed as a stream of data points.  
+
+To set up the simulation for this analysis, I'm going to split the data into `historical`, `prediction`, and `streaming` datasets.  The `historical` data for our batch analyses including clustering and predictions based on the past performance of taxi data.  The `prediction` data will be have clusters applied, and then used for predicting the number of riders per [...], the number of drivers needed for the [...], the average fare per mile, and the expected total tips for the [...].  Finally, the `streaming` data will be used for the real time analysis, with data points showing up one at a time, then we assign a cluster, run the prediction models, and monitor the number of available drivers.
+
+```{r load}
+data_raw <- 
+  spark_read_parquet(
+    sc, 
+    name = "full_data", 
+    path = "C:/Users/exp01754/OneDrive/Data/cs_bignyctaxi/data-small/parquet/yellow_tripdata_2009-01")
+```
+
+[...]
+
+```{r prep}
+# When sparklyr doesn't have an r function to interpret a spark function, use sql in quotes
+# pickup_hour = sql("hour(`trip_pickup_datetime`)"))
+
+# Date functions come from https://www.obstkel.com/spark-sql-date-functions
+
+data_prep_query <- 
+  data_raw %>%
+  rename_all(str_to_lower) %>%
+  mutate_at("payment_type", str_to_lower) %>%
+  filter(start_lon > -74.05,  start_lon < -73.75,
+         start_lat >  40.58,  start_lat <  40.90,
+         end_lon > -74.05,    end_lon < -73.75,
+         end_lat >  40.58,    end_lat <  40.90,
+         passenger_count > 0, passenger_count < 7,
+         trip_distance > 0,   trip_distance < 100,
+         total_amt > 0,
+         !is.na(trip_pickup_datetime)) %>%
+  mutate(trip_pickup_datetime = to_utc_timestamp(trip_pickup_datetime, "UTC")) %>% 
+  mutate(pickup_date = date_format(trip_pickup_datetime, "YYYY-MM-DD"),
+         pickup_year = date_format(trip_pickup_datetime, "YYYY"),
+         pickup_mon  = date_format(trip_pickup_datetime, "MM"),
+         pickup_day  = date_format(trip_pickup_datetime, "DD"),
+         pickup_hour = sql("hour(`trip_pickup_datetime`)"),
+         pickup_wday = date_format(trip_pickup_datetime, "E"),
+         pickup_nday = dayofweek(trip_pickup_datetime)) %>% 
+  select(-trip_pickup_datetime)
+
+data_prep <- data_prep_query %>% compute("data_prep")
+pipeline_prep <- ft_dplyr_transformer(sc, data_prep_query)
+
+# ml_transform(pipeline_prep, data_raw)
+
+reference_wday <- 
+  data_prep %>% 
+  distinct(pickup_wday, pickup_nday) %>% 
+  arrange(pickup_nday) %>% 
+  collect() %>% 
+  mutate_at("pickup_wday", fct_inorder, ordered = TRUE)
+```
+
+[...]
+
+```{r split}
+data_split <- 
+  data_prep %>% 
+  sdf_random_split(historical = 0.40, 
+                   prediction = 0.50,
+                   streaming  = 0.10,
+                   seed = 42)
+
+data_historical <- data_split$historical
+data_prediction <- data_split$prediction
+data_streaming  <- data_split$streaming
+
+data_counts <- 
+  data_split %>% 
+  map(count) %>% 
+  map(collect) %>% 
+  enframe(name = "dataframe") %>% 
+  unnest(value)
+
+data_counts %>% DT::datatable(rownames = FALSE)
+```
+
+## Exploration
+
+These plots are inspired by the original blog post. [...]
+
+```{r heatmap-data}
+# save the map to file so we don't have to wait for it here
+
+time_heatmap <- 
+  system.time({
+    plot_data_heatmap <- 
+      data_historical %>% 
+      group_by(pickup_nday, pickup_hour) %>%
+      summarise(n = count(),
+                fpm = sum(fare_amt, na.rm = TRUE) / sum(trip_distance, na.rm = TRUE)) %>%
+      collect() %>%
+      complete(pickup_nday, pickup_hour, fill = list(n = 0)) %>%
+      arrange(pickup_nday, pickup_hour) %>% 
+      left_join(reference_wday, by = "pickup_nday") %>% 
+      mutate_at("pickup_hour", str_pad, width = 2, pad = "0", side = "left") %>% 
+      mutate_at("pickup_hour", factor)
+  })[[3]]
+
+# mutate_at("pickup_wday", factor, levels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")) %>%
+```
+
+Here we see [...]
+
+This was computed in `r time_heatmap` seconds. [...]
+
+```{r heatmap-plot}
+plot_data_heatmap %>%
+  ggplot(aes(x = pickup_hour, y = pickup_wday, fill = n)) +
+  geom_tile() +
+  scale_fill_viridis_c(label = scales::comma_format())
+
+plot_data_heatmap %>%
+  ggplot(aes(x = pickup_hour, y = pickup_wday, fill = fpm)) +
+  geom_tile() +
+  scale_fill_viridis_c(label = scales::dollar_format())
+
+```
+
+This is [...]
+
+```{r blackmap-data}
+# just make it look pretty
+# save the map to file so we don't have to wait for it here
+
+time_blackmap <- system.time({
+  plot_data_blackmap <-
+    data_historical %>%
+    dbplot::db_compute_raster(x = start_lon, y = start_lat, resolution = 500) %>%
+    rename(n = `n()`)
+})[[3]]
+```
+
+We see [...]
+
+```{r blackmap-plot}
+plot_data_blackmap %>% 
+  leaflet() %>% 
+  addProviderTiles(providers$CartoDB.DarkMatterNoLabels) %>%
+  addCircles(lng = ~start_lon, 
+             lat = ~start_lat, 
+             opacity = ~n, 
+             radius = ~n,
+             stroke = FALSE, 
+             color = "yellow")
+```
+
+This was computed in `r time_blackmap` seconds.
+
+## Historical Clusters
+
+Now, [...]
+
+-- analyze attributes of these 5 location hubs, 
+-- w/ riders and fare/mile and average tip and %payment-type
+-- leaflet map
+
+```{r cluster}
+model_cluster <- 
+  data_historical %>%
+  ml_kmeans(~ start_lat + start_lon, k = 5, seed = 42, prediction_col = "cluster")
+
+data_cluster_centers <- 
+  model_cluster %>% 
+  broom::tidy() %>% 
+  arrange(-size) %>%
+  mutate(taxi_hub = LETTERS[sequence(n())] %>% as_factor(),
+         hub_color = brewer.pal(n(), "Pastel1"),
+         hub_pct = size / sum(size))
+
+data_cluster_summary <- 
+  model_cluster %>% 
+  ml_summary("predictions") %>% 
+  group_by(cluster) %>% 
+  summarise_at(c("passenger_count", "trip_distance", "fare_amt", "tip_amt"), "mean", na.rm = TRUE) %>% 
+  collect()
+
+# not going to summarise categorical columns
+
+data_cluster_centers %>%
+  left_join(data_cluster_summary, by = "cluster") %>% 
+  leaflet() %>%
+  addProviderTiles(providers$CartoDB.DarkMatterNoLabels) %>%
+  addCircleMarkers(lng = ~ start_lon,
+                   lat = ~ start_lat,
+                   label = ~str_c("Hub - ", taxi_hub),
+                   color = ~hub_color,
+                   stroke = TRUE,
+                   weight = 2,
+                   opacity = .50,
+                   fillColor = "transparent",
+                   radius = ~if_else(hub_pct > .20, 30, 50))
+```
+
+## Predictions
+
+Build these models once per year/quarter.
+
+When planning for a day, run the models to predict rides, passengers, distance, fares, tips
+
+I'm using regression models right now for the proof of concept.  They are not good models.
+
+-- lead to expected number of drivers needed
+-- Plotly Tiles with Day by Hour for Predictions
+
+```{r predict}
+
+data_predict_clusters <- ml_predict(model_cluster, data_prediction)
+
+data_predict_prep_query <- 
+  data_predict_clusters %>% 
+  group_by(cluster, pickup_nday, pickup_hour, pickup_wday) %>% 
+  summarise(rides = count(),
+            passengers = sum(passenger_count, na.rm = TRUE),
+            distance = sum(trip_distance, na.rm = TRUE),
+            fare = sum(fare_amt, na.rm = TRUE),
+            tip = sum(tip_amt, na.rm = TRUE)) %>% 
+  mutate(ppr = passengers / rides,
+         dpr = distance / rides,
+         fpr = fare / rides,
+         tpr = tip / rides,
+         fpm = fare / distance,
+         tpm = tip / distance) %>% 
+  arrange(cluster, pickup_nday, pickup_hour)
+
+data_predict_prep <- data_predict_prep_query %>% compute("prediction_preparation")
+
+pipeline_predict <- 
+  ml_pipeline(sc) %>% 
+  ft_dplyr_transformer(data_predict_prep_query) %>% 
+  ft_one_hot_encoder("cluster", "en_cluster")
+  
+
+data_predict_encode <-
+  data_predict_prep %>% 
+  ft_one_hot_encoder("cluster", "en_cluster")
+
+# Just Testing
+ml_linear_regression(data_predict_encode, fpm~en_cluster+pickup_wday+pickup_hour)
+
+time_model <- system.time({
+  model_list <- list(
+    rides = ml_linear_regression(data_predict_encode, rides ~ en_cluster + en_nday + pickup_hour),
+    ppr   = ml_linear_regression(data_predict_encode,   ppr ~ en_cluster + en_nday + pickup_hour),
+    dpr   = ml_linear_regression(data_predict_encode,   dpr ~ en_cluster + en_nday + pickup_hour),
+    fpr   = ml_linear_regression(data_predict_encode,   fpr ~ en_cluster + en_nday + pickup_hour),
+    tpr   = ml_linear_regression(data_predict_encode,   tpr ~ en_cluster + en_nday + pickup_hour),
+    fpm   = ml_linear_regression(data_predict_encode,   fpm ~ en_cluster + en_nday + pickup_hour),
+    tpm   = ml_linear_regression(data_predict_encode,   tpm ~ en_cluster + en_nday + pickup_hour))
+})[[3]]
+
+# data_predict_prep %>% 
+#   distinct(cluster, pickup_nday, pickup_hour) %>% 
+#   arrange(cluster, pickup_nday, pickup_hour)
+
+predict_grid <- 
+  list(cluster = 0:4,
+       pickup_nday = 1:7,
+       pickup_hour = 0:23) %>% 
+  cross_df() %>% 
+  left_join(reference_wday, by = "pickup_nday") %>% 
+  arrange(cluster, pickup_nday, pickup_hour) %>% 
+  copy_to(sc, .) %>% 
+  ft_one_hot_encoder("cluster", "en_cluster") %>% 
+  ft_one_hot_encoder("pickup_nday", "en_nday")
+
+# Turn this into a function?
+time_predictions <- 
+  system.time({
+    predict_list <- list(
+      rides = predict_grid %>% 
+        ml_predict(model_list$rides, .) %>% rename(p_rides = prediction) %>% collect(),
+      ppr   = predict_grid %>% ml_predict(model_list$ppr, .) %>% rename(p_ppr = prediction) %>% collect(),
+      dpr   = predict_grid %>% ml_predict(model_list$dpr, .) %>% rename(p_dpr = prediction) %>% collect(),
+      fpr   = predict_grid %>% ml_predict(model_list$fpr, .) %>% rename(p_fpr = prediction) %>% collect(),
+      tpr   = predict_grid %>% ml_predict(model_list$tpr, .) %>% rename(p_tpr = prediction) %>% collect(),
+      fpm   = predict_grid %>% ml_predict(model_list$fpm, .) %>% rename(p_fpm = prediction) %>% collect(),
+      tpm   = predict_grid %>% ml_predict(model_list$tpm, .) %>% rename(p_tpm = prediction) %>% collect()
+    )  
+  })[[3]]
+
+predict_grid_result <- 
+  predict_list %>% 
+  map(select, cluster, pickup_wday, pickup_hour, last_col()) %>% 
+  reduce(left_join, by = c("cluster", "pickup_wday", "pickup_hour")) %>% 
+  mutate(p_rides = ifelse(p_rides < 0, 0, p_rides))
+
+predict_grid_result %>% 
+  mutate_at(vars(p_rides), round, 2) %>% 
+  mutate_at(vars(p_ppr, p_dpr), scales::number, accuracy = 0.01) %>% 
+  mutate_at(vars(p_fpr:p_tpm), scales::dollar, accuracy = 0.01) %>% 
+  filter(cluster == 0) %>% 
+  plot_ly() %>% 
+  add_heatmap(x = ~pickup_hour, y = ~pickup_wday %>% fct_inorder(), z = ~p_rides, 
+              text = ~str_glue("Rides: {p_rides}, People/Ride: {p_ppr}"))
+
+```
+
+
+## Streaming Data
+
+-- toggle spark streaming
+-- accept new start lat/lon single point
+-- predict cluster
+-- predict riders / fare / tip
+-- monitor hub capacity
+
+Setting up pipelines...
+https://therinspark.com/pipelines.html
+
+```{r stream}
+# Playing with Pipelines
+# - Fit requires dataframe, returns a pipeline
+# - Transform applies a pipeline to dataframe, returns dataframe 
+
+# -------- Batch --------
+# Batch: Prepare Raw Data
+
+# Batch: Split Data
+
+# Batch: Clusters on Historical Data
+pipeline_to_build_cluster <- 
+  ml_pipeline(sc) %>% 
+  ft_r_formula(formula = ~ start_lat + start_lon) %>% 
+  ml_kmeans(seed = 42, k = 5, prediction_col = "cluster") %>% 
+  ml_fit(data_historical)
+
+# Batch: Assign Clusters
+batch_cluster_historical <- ml_transform(pipeline_to_build_cluster, data_historical)
+batch_cluster_prediction <- ml_transform(pipeline_to_build_cluster, data_prediction)
+
+
+# Batch: Build Prediction Models
+# - Singe Case -
+batch_predict_preparation <- ml_fit_and_transform(pipeline_predict, batch_cluster_prediction)  
+
+pipeline_to_build_predictions <- 
+  ml_pipeline(sc) %>% 
+  ft_r_formula(fpm ~ en_cluster + en_nday + pickup_hour) %>% 
+  ml_linear_regression(prediction_col = "p_fpm") %>% 
+  ml_fit(batch_predict_preparation)
+
+# - Many Cases - 
+fx_batch_prediction_pipeline <- function(y = NULL, x, sc = sc) {
+  .rhs <- str_c(x, collapse = " + ")
+  .lhs <- if (is.null(y)) NULL else str_c(y, " ~ ")
+  .frm <- str_c(.lhs, .rhs)
+  .out <- str_c("p_", y)
+  
+  ml_pipeline(sc) %>% ft_r_formula(.frm %>% as.formula()) %>% ml_linear_regression(prediction_col = .out)  
+}
+
+predict_y_cols <- c("rides", "ppr", "dpr", "fpr", "tpr", "fpm", "tpm")
+
+pipeline_to_build_predictions_list <- 
+  map(predict_y_cols, fx_batch_prediction_pipeline, 
+      sc = sc, x = c("en_cluster", "en_nday", "pickup_hour")) %>% 
+  set_names(str_c("pipeline_", predict_y_cols))
+
+pipeline_to_build_predictions_fits <- 
+  pipeline_to_build_predictions_list %>% 
+  modify(ml_fit, batch_predict_preparation)
+
+
+# Batch: Get Predictions
+# - Convert to list to do this for each Y value
+batch_predict_result <- ml_transform(pipeline_to_build_predictions_fits$fpm, predict_grid)
+
+
+# -------- Stream --------
+# - New Data
+stream_new_data <- data_streaming %>% sdf_sample(0.001, replacement = FALSE)
+
+# - Assign Clusters
+stream_cluster_assign <- ml_transform(pipeline_to_build_cluster, stream_new_data)
+
+# - Prepare for Prediction
+stream_predict_preparation <- ml_fit_and_transform(pipeline_predict, stream_cluster_assign)
+
+# - Get Predictions
+stream_predict_result <- ml_transform(pipeline_to_build_predictions_fits$fpm, stream_predict_preparation)
+
+```
+
+
+## Extra Notes
+
+-- use spark pipelines
+-- use spark streaming
+-- how does this work with rmd / shiny app?
+
+## Disconnect Spark
+
+-- toggle end of the spark app
+```{r disconnect}
+spark_disconnect(sc)
+```
+

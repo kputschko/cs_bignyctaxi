@@ -1,0 +1,4 @@
+action,runtime,timestamp,run_env,run_ram,n_row
+Write: Development Sample,35.980999999999995,2020-03-05T01:50:45Z,databricks,i3.xlarge; 32gb; 1d-4w,339897217
+Write: CSV to Parquet,935.407,2020-03-05T01:42:14Z,databricks,i3.xlarge; 32gb; 1d-4w,339897217
+Write: Total Rows,3.298999999999978,2020-03-05T01:52:23Z,databricks,i3.xlarge; 32gb; 1d-4w,339897217

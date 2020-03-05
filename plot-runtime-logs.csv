@@ -1,0 +1,14 @@
+group,env,ram,rows,stage,sec,min
+A,Experis Laptop,5gb,20M,Write Parquet and Build Pipelines,,
+A,Experis Laptop,5gb,20M,Build Models,2430,40.5
+A,AWS EC2,5gb,20M,Write Parquet and Build Pipelines,,
+A,AWS EC2,5gb,20M,Build Models,565,9.416666667
+B,Experis Laptop,5gb,40M,Write Parquet and Build Pipelines,915,15.25
+B,AWS EC2,5gb,40M,Write Parquet and Build Pipelines,205,3.416666667
+B,AWS EC2,5gb,40M,Build Models,1120,18.66666667
+B,AWS EC2,10gb,40M,Write Parquet and Build Pipelines,195,3.25
+B,AWS EC2,10gb,40M,Build Models,1010,16.83333333
+B,Databricks Cluster,4 x 32gb,40M,Write Parquet and Build Pipelines,,
+B,Databricks Cluster,4 x 32gb,40M,Build Models,955,15.91666667
+C,Databricks Cluster,4 x 32gb,340M,Write Parquet and Build Pipelines,1010,16.83333333
+C,Databricks Cluster,4 x 32gb,340M,Build Models,5115,85.25

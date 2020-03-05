@@ -1,0 +1,9 @@
+action,runtime,timestamp,run_env,run_ram,n_row
+Write: Development Sample,35.980999999999995,2020-03-05T01:50:45Z,databricks,i3.xlarge; 32gb; 1d-4w,339897217
+Write: CSV to Parquet,935.407,2020-03-05T01:42:14Z,databricks,i3.xlarge; 32gb; 1d-4w,339897217
+Write: Total Rows,3.298999999999978,2020-03-05T01:52:23Z,databricks,i3.xlarge; 32gb; 1d-4w,339897217
+Pipeline: Build,11.37900000000036,2020-03-05T02:00:37Z,databricks,i3.xlarge; 32gb; 1d-4w,30000
+Pipeline: Export,23.389999999999873,2020-03-05T02:02:08Z,databricks,i3.xlarge; 32gb; 1d-4w,30000
+Model: Fit Model,4744.115,2020-03-05T03:31:19Z,databricks,i3.xlarge; 32gb; 1d-4w,339897217
+Model: Load Pipelines,25.71199999999999,2020-03-05T02:10:18Z,databricks,i3.xlarge; 32gb; 1d-4w,NA
+Model: Summary,344.5639999999994,2020-03-05T03:38:28Z,databricks,i3.xlarge; 32gb; 1d-4w,NA

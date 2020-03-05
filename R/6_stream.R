@@ -14,8 +14,8 @@ sc <- spark_connect(master = "local", version = "2.3")
 
 # Load Pipelines ----------------------------------------------------------
 
-stream_pipenames <- dir("pipelines")
-stream_filepaths <- dir("pipelines", full.names = TRUE)
+stream_pipenames <- dir("pipelines/2020-02-26")
+stream_filepaths <- dir("pipelines/2020-02-26", full.names = TRUE)
 
 time_load_pipelines <- system.time({
   stream_pipelines <-
@@ -28,8 +28,8 @@ time_load_pipelines <- system.time({
 
 # Load Models -------------------------------------------------------------
 
-stream_modelnames <- dir("models")
-stream_modelpaths <- dir("models", full.names = TRUE)
+stream_modelnames <- dir("models/2020-02-26", pattern = "model_")
+stream_modelpaths <- dir("models/2020-02-26", full.names = TRUE, pattern = "model_")
 
 stream_model_list <-
   stream_modelpaths %>%
@@ -38,23 +38,30 @@ stream_model_list <-
 
 time_load_models <- system.time({
   stream_model <-
-    list(fpm = stream_model_list$ml_fpm %>% ml_load(sc, .),
-         cluster = stream_model_list$cluster %>% ml_load(sc, .))
+    list(fpm = stream_model_list$model_fpm_local  %>% ml_load(sc, path = .),
+         cluster = stream_model_list$model_rides_local %>% ml_load(sc, path = .))
 })[[3]]
 
 
 # Load Data ---------------------------------------------------------------
 
 data_new <-
-  spark_read_csv(sc, path = "data-small/csv/yellow_tripdata_2009-01", memory = FALSE) %>%
+  spark_read_csv(sc, path = "data-small/csv", memory = FALSE) %>%
   sdf_sample(0.0001, replacement = FALSE)
 
+data_grid <-
+  list(cluster = 1:5,
+       weekday = 1:7,
+       hour = 0:23) %>%
+  cross_df()
 
 # Get Predictions ---------------------------------------------------------
 
-stream_prediction <-
-  ml_transform(stream_pipelines$sql_rawToCluster, data_new) %>%
-  ml_transform(stream_model$cluster, .) %>%
-  ml_transform(stream_pipelines$sql_clusterToML, .) %>%
-  ml_transform(stream_model$fpm, .) %>%
-  collect()
+stream_model$fpm %>% ml_predict(data_new)
+
+# stream_prediction <-
+#   ml_transform(stream_pipelines$sql_rawToCluster, data_new) %>%
+#   ml_transform(stream_model$cluster, .) %>%
+#   ml_transform(stream_pipelines$sql_clusterToML, .) %>%
+#   ml_transform(stream_model$fpm, .) %>%
+#   collect()
