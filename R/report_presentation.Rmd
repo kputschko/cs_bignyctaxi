@@ -14,7 +14,7 @@ knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, error = FA
 
 pacman::p_load(tidyverse, leaflet, DT, lubridate,
                colorspace, extrafont, scales, ggthemes,
-               RColorBrewer)
+               patchwork, RColorBrewer)
 
 
 report_assets <- read_rds("models/2020-02-26/summary.rds")
@@ -112,6 +112,8 @@ report_assets$s_heatmap %>%
 
 ### Environment Comparison
 
+My laptop crashed when trying to build models on 40 million rows of data, but it was able to convert the files to Spark Parquet format just fine.  The laptop was able to complete the process when working with just 20 millions rows at 5gb of RAM reserved for Spark.  The same process takes nearly 1/3 the amount of time on the AWS EC2 Server with a similar 5gb of RAM reserved for Spark.  
+
 ```{r clean-logs, fig.align='center', fig.height=6, fig.width=8}
 
 raw_logs <- 
@@ -120,168 +122,71 @@ raw_logs <-
   mutate_at(vars(env, ram, rows, label), fct_inorder) %>% 
   mutate_at(vars(stage), fct_rev) 
 
+log_colors <- 
+  c("Write Parquet and Build Pipelines" = "#FC8D62",
+    "Build Models" = "#66C2A5")
 
 plot_40 <- 
   raw_logs %>% 
   filter(group == "B") %>% 
   ggplot(aes(x = label, y = min, fill = stage, color = stage)) +
-  geom_col(width = 0.40) +
+  geom_col(width = .45) +
   scale_y_continuous(labels = label_number(accuracy = 1, suffix = " mins"),
-                     breaks = c(10, 20)) +
-  scale_color_manual(values = darken(c("#E41A1C", "#377EB8"), amount = 0.10)) +
+                     breaks = c(10, 20),
+                     minor_breaks = 0) +
+  scale_color_manual(values = modify(log_colors, darken, amount = 0.20)) +
+  scale_fill_manual(values = log_colors) +
   labs(x = NULL, y = NULL, fill = NULL, color = NULL, subtitle = "40 Million Rows") +
   theme_fivethirtyeight(base_family = "Trebuchet MS") +
-  theme(plot.subtitle = element_text(hjust = 0.50))
+  theme(plot.subtitle = element_text(hjust = 0.50),
+        panel.grid.minor.y = element_line(color = "lightgray"),
+        panel.grid.major.x = element_blank())
   
-plot_20 <- 
+plot_20 <-
   raw_logs %>% 
   filter(group == "A") %>% 
   ggplot(aes(x = label, y = min, fill = stage, color = stage)) +
   geom_col(width = 0.50) +
-  scale_y_continuous(labels = label_number(accuracy = 1, suffix = " mins"),
-                     breaks = c(20, 40)) +
-  scale_color_manual(values = darken(c("#E41A1C", "#377EB8"), amount = 0.10)) +
+  scale_y_continuous(labels = label_number(accuracy = 1),
+                     breaks = c(20, 40),
+                     minor_breaks = 0) +
+  scale_color_manual(values = modify(log_colors, darken, amount = 0.20)) +
+  scale_fill_manual(values = log_colors) +
   labs(x = NULL, y = NULL, fill = NULL, color = NULL, subtitle = "20 Million Rows") +
   guides(color = "none", fill = "none") +
   theme_fivethirtyeight(base_family = "Trebuchet MS") +
-  theme(plot.subtitle = element_text(hjust = 0.50))
+  theme(plot.subtitle = element_text(hjust = 0.50),
+        panel.grid.minor.y = element_line(color = "lightgray"),
+        panel.grid.major.x = element_blank())
 
-plot_340 <- 
+plot_340 <-
   raw_logs %>% 
   filter(group == "C") %>% 
   ggplot(aes(x = label, y = min, fill = stage, color = stage)) +
-  geom_col(width = .25) +
-  scale_y_continuous(labels = label_number(accuracy = 1, suffix = " mins"),
-                     breaks = c(90)) +
-  scale_color_manual(values = darken(c("#E41A1C", "#377EB8"), amount = 0.10)) +
+  geom_col(width = 0.50) +
+  scale_y_continuous(labels = label_number(accuracy = 1),
+                     breaks = c(20, 100),
+                     minor_breaks = pretty_breaks(5)) +
+  scale_color_manual(values = modify(log_colors, darken, amount = 0.20)) +
+  scale_fill_manual(values = log_colors) +
   labs(x = NULL, y = NULL, fill = NULL, color = NULL, subtitle = "340 Million Rows") +
   guides(fill = "none", color = "none") +
   theme_fivethirtyeight(base_family = "Trebuchet MS") +
-  theme(plot.subtitle = element_text(hjust = 0.50))
+  theme(plot.subtitle = element_text(hjust = 0.50),
+        panel.grid.minor.y = element_line(color = lighten("darkgray", 0.20)),
+        panel.grid.major.x = element_blank())
 
 
 plot_40 / (plot_20 + plot_340) + 
   plot_annotation(title = "Runtimes on Various Spark Environments", 
-                  theme = theme_fivethirtyeight(base_family = "Calibri"))
+                  theme = theme_fivethirtyeight(base_family = "Calibri")) +
+  plot_layout(guides = "collect")
 ```
 
 
-```{r logs, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
-# levels_tbl <- 
-#   tibble(env_lab = c("local_5G",
-#                      "sas_server_5G_20M",
-#                      "sas_server_5G",
-#                      "sas_server_10G",
-#                      "databricks_i3.xlarge; 1-30gb Driver; 4-30gb Workers",
-#                      "i3.xlarge; 32gb; 1d-4w"),
-#          labels = c("Experis Laptop",
-#                     "AWS EC2",
-#                     "AWS EC2",
-#                     "AWS EC2",
-#                     "DB Cluster",
-#                     "DB Cluster"),
-#          text = c("<b>Env: Experis Laptop</b> \nRows: 20 Million \nRAM:  5gb",
-#                   "<b>Env: AWS EC2</b> \nRows: 20 Million \nRAM:  5gb",
-#                   "<b>Env: AWS EC2</b> \nRows: 40 Million \nRAM:  5gb",
-#                   "<b>Env: AWS EC2</b> \nRows: 40 Million \nRAM: 10gb",
-#                   "<b>Env: Databricks Cluster</b> \nCluster: 1 Driver & 4 Workers \nRows: 40 Million \nRAM: 32gb",
-#                   "<b>Env: Databricks Cluster</b> \nCluster: 1 Driver & 4 Workers \nRows: 340 Million \nRAM: 32gb"),
-#          colors = brewer.pal(6, "Set2"))
-# 
-# levels_env <- levels_tbl %>% pull(env_lab)
-# levels_col <- levels_tbl %>% select(env_lab, colors) %>% deframe()
-# levels_label <- levels_tbl %>% select(env_lab, labels) %>% deframe()
-# 
-# report_logs <- 
-#   dir("runtime_logs", full.names = TRUE, pattern = ".csv") %>% 
-#   map_dfr(read_csv, col_type = cols()) %>% 
-#   distinct() %>% 
-#   filter(timestamp >= "2020-02-26", timestamp <= "2020-03-01",
-#          !(run_env == "databricks" & run_ram == "64G"),
-#          action != "Model: Load Data") %>% 
-#   separate(action, into = c("stage", "step"), sep = ": ") %>% 
-#   unite(env_lab, run_env, run_ram) %>% 
-#   mutate(env_lab = ifelse(stage == "Model" & env_lab == "sas_server_5G" & minute(timestamp) < 26, 
-#                           "sas_server_5G_20M", 
-#                           env_lab))
-# 
-# 
-# # Parquet & Pipelines
-# report_log_summary_wp <- 
-#   report_logs %>% 
-#   filter(stage %in% c("Write", "Pipeline")) %>% 
-#   group_by(env_lab) %>% 
-#   summarise(filesize = sum(filesize, na.rm = TRUE),
-#             runtime = sum(runtime)) %>% 
-#   left_join(levels_tbl) %>% 
-#   mutate_at("env_lab", factor, levels = levels_env)
-# 
-# plot_rt_pipes <-
-#   report_log_summary_wp %>% 
-#   ggplot(aes(x = env_lab, y = runtime, fill = env_lab, color = env_lab, text = text)) +
-#   geom_col(position = "stack") +
-#   scale_y_continuous(labels = label_number(scale = 1/60, accuracy = 1, suffix = " mins"), 
-#                      breaks = breaks_width(600)) +
-#   scale_x_discrete(label = levels_label) +
-#   scale_fill_manual(values = levels_col) +
-#   scale_color_manual(values = modify(levels_col, darken, amount = 0.30)) +
-#   labs(x = NULL, y = NULL, 
-#        title = 'Spark Runtimes: Write Data to Parquet and Build Spark Pipelines', 
-#        subtitle = "Includes process of converting raw files to parquet, and building the Spark Pipelines") +
-#   guides(fill = "none", color = "none") +
-#   theme_minimal() +
-#   theme(plot.title = element_text(family = "Calibri", face = "bold", size = 16),
-#         plot.subtitle = element_text(family = "Trebuchet MS"), 
-#         plot.caption = element_text(family = "Trebuchet MS"))
-# 
-# # Models
-# report_log_summary_m <- 
-#   report_logs %>% 
-#   filter(stage == "Model") %>% 
-#   group_by(env_lab) %>%
-#   summarise(n_row = max(n_row, na.rm = TRUE),
-#             runtime = sum(runtime, na.rm = TRUE)) %>% 
-#   left_join(levels_tbl) %>% 
-#   mutate_at("env_lab", factor, levels = levels_env)
-# 
-# plot_rt_models <- 
-#   report_log_summary_m %>% 
-#   ggplot(aes(x = env_lab, y = runtime, fill = env_lab, color = env_lab, text = text, label = labels)) +
-#   geom_col(position = "stack") +
-#   scale_y_continuous(labels = label_number(scale = 1/60, accuracy = 1, suffix = " mins"), 
-#                      breaks = breaks_width(900)) +
-#   scale_x_discrete(label = levels_label) +
-#   scale_fill_manual(values = levels_col) +
-#   scale_color_manual(values = modify(levels_col, darken, amount = 0.30)) +
-#   labs(x = NULL, y = NULL, 
-#        title = 'Spark Runtimes: Cluster, Ride and Fare ML Models', 
-#        subtitle = "Includes the entire process of building models for the clusters, rides, and fares") +
-#   guides(fill = "none", color = "none") +
-#   # coord_flip() +
-#   theme_minimal() +
-#   theme(plot.title = element_text(family = "Calibri", face = "bold", size = 16),
-#         plot.subtitle = element_text(family = "Trebuchet MS"), 
-#         plot.caption = element_text(family = "Trebuchet MS"))
-# 
-# # Special i3 1D 4W - 60GB - 320M Rows
-# # plot_bigdata <- 
-# read_csv("2020-03-05 - cluster 320m runtimes.csv", col_types = cols()) %>% 
-#   mutate(grp = ifelse(str_detect(action, "Write: |Pipeline: "), "Write Data and Build Pipelines", "Model Building")) %>% 
-#   group_by(grp, run_env, run_ram) %>% 
-#   summarise(runtime = sum(runtime),
-#             n_row = max(n_row, na.rm = TRUE)) %>% 
-#   left_join(levels_tbl, by = c("run_ram" = "env_lab")) %>% 
-#   ggplot(aes(x = fct_rev(grp), y = runtime, text = text)) +
-#   geom_col()
-```
+### References
 
-```{r runtime, fig.width=7, fig.align='center'}
-# plotly::ggplotly(plot_rt_pipes, tooltip = c("text", "y")) %>% 
-#   plotly::layout(showlegend = FALSE)
-# 
-# plotly::ggplotly(plot_rt_models, tooltip = c("text", "y")) %>% 
-#   plotly::layout(showlegend = FALSE)
-```
-
-### Conclusion
+1. The R in Spark: https://therinspark.com/
+2. Sparklyr Documentation: https://spark.rstudio.com/
+3. Databricks: https://databricks.com/try-databricks
 

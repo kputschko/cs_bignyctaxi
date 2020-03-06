@@ -12,3 +12,4 @@ B,Databricks Cluster,4 x 32gb,40M,Write Parquet and Build Pipelines,,
 B,Databricks Cluster,4 x 32gb,40M,Build Models,955,15.91666667
 C,Databricks Cluster,4 x 32gb,340M,Write Parquet and Build Pipelines,1010,16.83333333
 C,Databricks Cluster,4 x 32gb,340M,Build Models,5115,85.25
+C,Databricks Cluster,8 x 64gb,340M,Build Models,810,13.50
